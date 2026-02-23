@@ -23,9 +23,7 @@ def render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos):
 
     tab_nueva, tab_editar = st.tabs(["✨ Agregar Ubicación", "✏️ Editar Registro"])
 
-    # ---------------------------------------------------------
-    # PESTAÑA 1: AGREGAR NUEVA UBICACIÓN
-    # ---------------------------------------------------------
+    # --- PESTAÑA 1: AGREGAR NUEVA UBICACIÓN ---
     with tab_nueva:
         with st.form("form_nueva_ubi"):
             st.subheader("Registrar Nuevo Lote")
@@ -66,9 +64,7 @@ def render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos):
                 conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
                 st.success(f"✅ Lote {nombre_gen} agregado."); st.cache_data.clear(); st.rerun()
 
-    # ---------------------------------------------------------
-    # PESTAÑA 2: EDITAR REGISTROS
-    # ---------------------------------------------------------
+    # --- PESTAÑA 2: EDITAR REGISTROS ---
     with tab_editar:
         if not df_u.empty:
             # Aseguramos que id_lote sea manejable
