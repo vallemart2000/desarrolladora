@@ -12,11 +12,13 @@ def render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos):
         if df_u.empty:
             st.info("No hay lotes registrados.")
         else:
-            # Filtros rápidos
-            c1, c2 = st.columns(2)
-            f_estatus = c1.multiselect("Filtrar por Estatus", options=df_u["estatus"].unique(), default=df_u["estatus"].unique())
+            # --- FILTRO TIPO SWITCH ---
+            ocultar_vendidos = st.toggle("Ocultar ubicaciones vendidas", value=True)
             
-            df_mostrar = df_u[df_u["estatus"].isin(f_estatus)]
+            if ocultar_vendidos:
+                df_mostrar = df_u[df_u["estatus"] != "Vendido"].copy()
+            else:
+                df_mostrar = df_u.copy()
 
             st.dataframe(
                 df_mostrar,
@@ -76,12 +78,10 @@ def render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos):
         if df_u.empty:
             st.info("No hay ubicaciones para editar.")
         else:
-            # Seleccionar por nombre de ubicación
             opciones_ubi = df_u["ubicacion"].tolist()
             ubi_sel = st.selectbox("Seleccione la ubicación a modificar", ["--"] + opciones_ubi)
 
             if ubi_sel != "--":
-                # Obtener datos actuales
                 idx = df_u[df_u["ubicacion"] == ubi_sel].index[0]
                 datos_actuales = df_u.loc[idx]
 
@@ -89,7 +89,6 @@ def render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos):
                     st.write(f"🔢 Editando ID: **{datos_actuales['id_lote']}**")
                     ce1, ce2 = st.columns(2)
                     
-                    # Campos de edición
                     e_fase = ce1.selectbox("Fase/Etapa", ["Etapa 1", "Etapa 2", "Etapa 3", "Club"], 
                                          index=["Etapa 1", "Etapa 2", "Etapa 3", "Club"].index(datos_actuales["fase"]) if datos_actuales["fase"] in ["Etapa 1", "Etapa 2", "Etapa 3", "Club"] else 0)
                     e_estatus = ce2.selectbox("Estatus", ["Disponible", "Vendido", "Apartado", "Bloqueado"],
