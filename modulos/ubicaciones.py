@@ -9,13 +9,14 @@ def render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos):
     ocultar_vendidos = st.toggle("Ocultar Lotes Vendidos", value=True)
 
     df_mostrar = df_u.copy()
+    # Parche de seguridad para estatus
     if ocultar_vendidos and not df_u.empty and "estatus" in df_u.columns:
         df_mostrar = df_u[df_u["estatus"] == "Disponible"]
     else:
         df_mostrar = df_u.copy()
 
-    # Selección de columnas visibles para el usuario (ID oculto)
-    columnas_visibles = ["ubicacion", "fase", "manzana", "lote", "precio", "estatus"]
+    # Selección de columnas visibles (Agregamos comision a la vista)
+    columnas_visibles = ["ubicacion", "fase", "manzana", "lote", "precio", "comision", "estatus"]
     cols_existentes = [c for c in columnas_visibles if c in df_mostrar.columns]
     
     st.dataframe(df_mostrar[cols_existentes], use_container_width=True, hide_index=True)
@@ -34,6 +35,9 @@ def render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos):
             f_lote = c2.number_input("🔢 Lote", min_value=1, step=1, value=1)
             f_fase = c1.text_input("🏗️ Fase / Etapa", placeholder="Ej: Fase 1")
             f_pre = c2.number_input("💵 Precio de Lista ($)", min_value=0.0, step=1000.0)
+            
+            # --- NUEVO CAMPO: COMISIÓN ---
+            f_com = c1.number_input("💰 Comisión Sugerida ($)", min_value=0.0, step=500.0)
             
             # Generación de ID automática
             nuevo_id_sugerido = 1
@@ -54,6 +58,7 @@ def render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos):
                     "lote": f_lote,
                     "fase": f_fase,
                     "precio": f_pre,
+                    "comision": f_com, # Guardamos la comisión
                     "estatus": "Disponible"
                 }])
                 
@@ -66,6 +71,7 @@ def render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos):
     # ---------------------------------------------------------
     with tab_editar:
         if not df_u.empty:
+            # Aseguramos que id_lote sea manejable
             ubi_lista = (df_u["id_lote"].astype(str) + " | " + df_u["ubicacion"]).tolist()
             u_sel = st.selectbox("Seleccione el lote a modificar:", ["--"] + ubi_lista)
             
@@ -78,13 +84,21 @@ def render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos):
                     st.write(f"✏️ Editando: **{row['ubicacion']}**")
                     ce1, ce2 = st.columns(2)
                     e_pre = ce1.number_input("Precio Actualizado ($)", min_value=0.0, value=float(row.get("precio", 0.0)))
-                    e_est = ce2.selectbox("Estatus", ["Disponible", "Vendido", "Apartado", "Bloqueado"], 
+                    
+                    # --- EDICIÓN DE COMISIÓN ---
+                    e_com = ce2.number_input("Comisión Actualizada ($)", min_value=0.0, value=float(row.get("comision", 0.0)))
+                    
+                    e_est = ce1.selectbox("Estatus", ["Disponible", "Vendido", "Apartado", "Bloqueado"], 
                                          index=["Disponible", "Vendido", "Apartado", "Bloqueado"].index(row["estatus"]))
-                    e_fas = ce1.text_input("Fase", value=str(row.get("fase", "")))
+                    e_fas = ce2.text_input("Fase", value=str(row.get("fase", "")))
                     
                     cb1, cb2 = st.columns(2)
                     if cb1.form_submit_button("💾 GUARDAR CAMBIOS"):
-                        df_u.at[idx, "precio"], df_u.at[idx, "estatus"], df_u.at[idx, "fase"] = e_pre, e_est, e_fas
+                        df_u.at[idx, "precio"] = e_pre
+                        df_u.at[idx, "comision"] = e_com # Actualizamos comisión
+                        df_u.at[idx, "estatus"] = e_est
+                        df_u.at[idx, "fase"] = e_fas
+                        
                         conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
                         st.success("Cambios guardados."); st.cache_data.clear(); st.rerun()
                         
