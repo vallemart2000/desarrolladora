@@ -74,19 +74,19 @@ def render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos):
 
     # --- PESTAÑA 3: EDITAR REGISTRO ---
     with tab_editar:
-        st.subheader("Modificar Ubicación Existente")
+        st.subheader("Modificar o Eliminar Ubicación")
         if df_u.empty:
             st.info("No hay ubicaciones para editar.")
         else:
             opciones_ubi = df_u["ubicacion"].tolist()
-            ubi_sel = st.selectbox("Seleccione la ubicación a modificar", ["--"] + opciones_ubi)
+            ubi_sel = st.selectbox("Seleccione la ubicación a gestionar", ["--"] + opciones_ubi)
 
             if ubi_sel != "--":
                 idx = df_u[df_u["ubicacion"] == ubi_sel].index[0]
                 datos_actuales = df_u.loc[idx]
 
                 with st.form("form_edit_ub"):
-                    st.write(f"🔢 Editando ID: **{datos_actuales['id_lote']}**")
+                    st.write(f"🔢 Gestionando ID: **{datos_actuales['id_lote']}**")
                     ce1, ce2 = st.columns(2)
                     
                     e_fase = ce1.selectbox("Fase/Etapa", ["Etapa 1", "Etapa 2", "Etapa 3", "Club"], 
@@ -97,7 +97,14 @@ def render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos):
                     e_pre = ce1.number_input("Precio de Lista ($)", min_value=0.0, value=float(datos_actuales["precio"]))
                     e_com = ce2.number_input("Comisión Sugerida ($)", min_value=0.0, value=float(datos_actuales["comision"]))
 
-                    if st.form_submit_button("💾 Guardar Cambios"):
+                    st.markdown("---")
+                    st.warning("⚠️ **Zona de Peligro**")
+                    confirmar_borrado = st.checkbox(f"Confirmar que deseo eliminar la ubicación {ubi_sel} permanentemente.")
+                    
+                    c_save, c_del = st.columns(2)
+                    
+                    # Botón Guardar
+                    if c_save.form_submit_button("💾 Guardar Cambios", type="primary"):
                         df_u.at[idx, "fase"] = e_fase
                         df_u.at[idx, "estatus"] = e_estatus
                         df_u.at[idx, "precio"] = e_pre
@@ -106,3 +113,13 @@ def render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos):
                         conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
                         st.success(f"✅ Ubicación {ubi_sel} actualizada correctamente.")
                         st.cache_data.clear(); st.rerun()
+                    
+                    # Botón Eliminar
+                    if c_del.form_submit_button("🗑️ Eliminar Ubicación"):
+                        if confirmar_borrado:
+                            df_u = df_u.drop(idx)
+                            conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
+                            st.error(f"🗑️ Ubicación {ubi_sel} eliminada del registro.")
+                            st.cache_data.clear(); st.rerun()
+                        else:
+                            st.warning("❌ Debes marcar la casilla de confirmación para eliminar.")
