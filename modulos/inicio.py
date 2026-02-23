@@ -1,7 +1,7 @@
 import streamlit as st
 
 def render_inicio(df_v, df_p, df_cl, fmt_moneda):
-    st.title("🏠 Sistema Zona Valle")
+    st.title("🏠 Sistema Valle Mart")
     st.success("✅ Conexión Estable")
     
     st.markdown("---")
