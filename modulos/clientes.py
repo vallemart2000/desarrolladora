@@ -1,100 +1,115 @@
 import streamlit as st
 import pandas as pd
 
-def render_clientes(df_c, conn, URL_SHEET, cargar_datos):
-    st.title("👥 Gestión de Clientes")
+def verificar_y_reparar_columnas(df, columnas_necesarias, worksheet_name, conn, URL_SHEET):
+    """Verifica si faltan columnas y las agrega al DataFrame y a la base de datos."""
+    cambios = False
+    for col, default_val in columnas_necesarias.items():
+        if col not in df.columns:
+            df[col] = default_val
+            cambios = True
     
-    # --- VISTA GENERAL ---
-    st.write("### 🔍 Directorio de Clientes")
-    if not df_c.empty:
-        # 1. Definimos las columnas que queremos mostrar, incluyendo el ID
-        columnas_visibles = ["id_cliente", "nombre", "telefono", "correo", "direccion", "notas"]
-        cols_existentes = [c for c in columnas_visibles if c in df_c.columns]
-        
-        # 2. Diccionario para renombrar a "Nombre Propio"
-        nuevos_nombres = {
-            "id_cliente": "ID Cliente",
-            "nombre": "Nombre Completo",
-            "telefono": "Teléfono",
-            "correo": "Correo Electrónico",
-            "direccion": "Dirección",
-            "notas": "Notas"
-        }
-        
-        # Creamos una copia filtrada y renombramos
-        df_visual = df_c[cols_existentes].copy().rename(columns=nuevos_nombres)
+    if cambios:
+        try:
+            conn.update(spreadsheet=URL_SHEET, worksheet=worksheet_name, data=df)
+            st.toast(f"🛠️ Estructura de '{worksheet_name}' actualizada.")
+        except Exception as e:
+            st.error(f"Error al reparar columnas: {e}")
+    return df
 
-        # 3. Aplicamos Estilo (Centrado y formato de ID como entero)
-        df_estilizado = df_visual.style.format({
-            "ID Cliente": "{:,.0f}" # Evita decimales como 1.0
-        }).set_table_styles([
-            # Centrar encabezados
-            {'selector': 'th', 'props': [('text-align', 'center'), ('background-color', '#f0f2f6')]},
-            # Centrar celdas de datos
-            {'selector': 'td', 'props': [('text-align', 'center')]}
-        ])
+def render_clientes(df_cl, conn, URL_SHEET, cargar_datos):
+    st.title("👥 Gestión de Clientes")
 
-        st.dataframe(df_estilizado, use_container_width=True, hide_index=True)
-    else:
-        st.info("No hay clientes registrados.")
+    # --- 1. VERIFICACIÓN DE ESTRUCTURA ---
+    cols_necesarias = {
+        "id_cliente": 1001,
+        "nombre": "Sin Nombre",
+        "telefono": "",
+        "correo": ""
+    }
+    df_cl = verificar_y_reparar_columnas(df_cl, cols_necesarias, "clientes", conn, URL_SHEET)
 
-    tab_nuevo, tab_editar = st.tabs(["✨ Agregar Cliente", "✏️ Editar Registro"])
+    tab_lista, tab_nuevo = st.tabs(["📋 Directorio de Clientes", "➕ Registrar Nuevo"])
 
-    # --- PESTAÑA 1: AGREGAR ---
+    # --- PESTAÑA 1: LISTA DE CLIENTES ---
+    with tab_lista:
+        st.subheader("Clientes Registrados")
+        if df_cl.empty:
+            st.info("No hay clientes registrados aún.")
+        else:
+            # Buscador por nombre
+            busqueda = st.text_input("🔍 Buscar cliente por nombre", "")
+            if busqueda:
+                df_mostrar = df_cl[df_cl['nombre'].str.contains(busqueda, case=False, na=False)]
+            else:
+                df_mostrar = df_cl
+
+            st.dataframe(
+                df_mostrar,
+                column_config={
+                    "id_cliente": st.column_config.NumberColumn("ID", format="%d"),
+                    "nombre": "Nombre Completo",
+                    "telefono": "Teléfono",
+                    "correo": "Correo Electrónico"
+                },
+                use_container_width=True,
+                hide_index=True
+            )
+
+    # --- PESTAÑA 2: REGISTRO NUEVO ---
     with tab_nuevo:
+        st.subheader("Agregar Cliente al Sistema")
+        
         with st.form("form_nuevo_cliente"):
-            st.subheader("Datos del Nuevo Cliente")
-            c1, c2 = st.columns(2)
-            f_nom = c1.text_input("👤 Nombre Completo")
-            f_tel = c2.text_input("📞 Teléfono")
-            f_cor = c1.text_input("📧 Correo Electrónico")
-            f_dir = c2.text_input("📍 Dirección")
-            f_not = st.text_area("📝 Notas adicionales")
+            col1, col2 = st.columns(2)
+            f_nombre = col1.text_input("Nombre Completo *")
+            f_tel = col2.text_input("Teléfono (con clave de país, ej: 521...)")
+            f_mail = col1.text_input("Correo Electrónico")
             
-            nuevo_id = 1
-            if not df_c.empty and "id_cliente" in df_c.columns:
-                try:
-                    nuevo_id = int(float(df_c["id_cliente"].max())) + 1
-                except:
-                    nuevo_id = len(df_c) + 1
+            st.info("💡 El ID se asignará automáticamente comenzando desde el 1001.")
             
-            if st.form_submit_button("➕ REGISTRAR CLIENTE"):
-                if not f_nom:
-                    st.error("El nombre es obligatorio.")
-                else:
-                    nuevo_reg = pd.DataFrame([{"id_cliente": nuevo_id, "nombre": f_nom, "telefono": f_tel, "correo": f_cor, "direccion": f_dir, "notas": f_not}])
-                    df_c = pd.concat([df_c, nuevo_reg], ignore_index=True)
-                    conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=df_c)
-                    st.success(f"✅ Cliente {f_nom} registrado."); st.cache_data.clear(); st.rerun()
+            btn_guardar = st.form_submit_button("💾 Guardar Cliente", type="primary")
 
-    # --- PESTAÑA 2: EDITAR ---
-    with tab_editar:
-        if not df_c.empty:
-            cli_lista = (df_c["id_cliente"].astype(str) + " | " + df_c["nombre"]).tolist()
-            c_sel = st.selectbox("Seleccione el cliente a modificar:", ["--"] + cli_lista)
-            
-            if c_sel != "--":
-                id_c_sel = int(float(c_sel.split(" | ")[0]))
-                idx = df_c[df_c["id_cliente"].astype(float).astype(int) == id_c_sel].index[0]
-                row = df_c.loc[idx]
-                
-                with st.form("form_edit_cliente"):
-                    ce1, ce2 = st.columns(2)
-                    e_nom = ce1.text_input("Nombre Completo", value=row["nombre"])
-                    e_tel = ce2.text_input("Teléfono", value=str(row.get("telefono", "")))
-                    e_cor = ce1.text_input("Correo Electrónico", value=str(row.get("correo", "")))
-                    e_dir = ce2.text_input("Dirección", value=str(row.get("direccion", "")))
-                    e_not = st.text_area("Notas", value=str(row.get("notas", "")))
+            if btn_guardar:
+                if not f_nombre:
+                    st.error("❌ El nombre es obligatorio.")
+                else:
+                    # --- LÓGICA DE ID 1001+ ---
+                    if df_cl.empty:
+                        nuevo_id = 1001
+                    else:
+                        max_id = df_cl["id_cliente"].max()
+                        # Si el ID más alto es menor a 1001, forzamos el inicio en 1001
+                        nuevo_id = int(max_id + 1) if max_id >= 1001 else 1001
+
+                    # Crear el nuevo registro
+                    nuevo_cliente = pd.DataFrame([{
+                        "id_cliente": nuevo_id,
+                        "nombre": f_nombre.strip(),
+                        "telefono": f_tel.strip(),
+                        "correo": f_mail.strip()
+                    }])
+
+                    # Concatenar y subir a Google Sheets
+                    df_actualizado = pd.concat([df_cl, nuevo_cliente], ignore_index=True)
                     
-                    cb1, cb2 = st.columns(2)
-                    if cb1.form_submit_button("💾 GUARDAR CAMBIOS"):
-                        df_c.at[idx, "nombre"], df_c.at[idx, "telefono"] = e_nom, e_tel
-                        df_c.at[idx, "correo"], df_c.at[idx, "direccion"] = e_cor, e_dir
-                        df_c.at[idx, "notas"] = e_not
-                        conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=df_c)
-                        st.success("Actualizado."); st.cache_data.clear(); st.rerun()
-                        
-                    if cb2.form_submit_button("🗑️ ELIMINAR"):
-                        df_c = df_c.drop(idx)
-                        conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=df_c)
-                        st.error("Eliminado."); st.cache_data.clear(); st.rerun()
+                    try:
+                        conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=df_actualizado)
+                        st.success(f"✅ Cliente '{f_nombre}' registrado con éxito con el ID {nuevo_id}.")
+                        st.cache_data.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error al guardar: {e}")
+
+        # --- OPCIÓN DE CARGA MASIVA (Opcional) ---
+        st.markdown("---")
+        with st.expander("📤 Carga Masiva desde Excel/CSV"):
+            archivo = st.file_uploader("Subir archivo", type=["xlsx", "csv"])
+            if archivo:
+                df_subida = pd.read_excel(archivo) if archivo.name.endswith('xlsx') else pd.read_csv(archivo)
+                st.write("Vista previa de datos a importar:")
+                st.dataframe(df_subida.head())
+                
+                if st.button("Confirmar Importación Masiva"):
+                    # Aquí se podría aplicar la misma lógica de ID correlativo para cada fila
+                    st.warning("Función en desarrollo: Asegúrate de que las columnas coincidan.")
