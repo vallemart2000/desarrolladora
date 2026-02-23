@@ -12,6 +12,8 @@ def render_ventas(df_v, df_u, df_cl, df_vd, conn, URL_SHEET, fmt_moneda):
     # ---------------------------------------------------------
     with tab_nueva:
         st.subheader("Registrar Contrato Nuevo")
+        
+        # Filtramos solo los lotes disponibles
         lotes_libres = df_u[df_u["estatus"] == "Disponible"]["ubicacion"].tolist()
         
         if not lotes_libres:
@@ -20,9 +22,14 @@ def render_ventas(df_v, df_u, df_cl, df_vd, conn, URL_SHEET, fmt_moneda):
             f_lote = st.selectbox("📍 Seleccione Lote a Vender", ["--"] + lotes_libres, key="nv_lote")
             
             if f_lote != "--":
+                # EXTRAEMOS LA FILA DE LA UBICACIÓN SELECCIONADA
                 row_u = df_u[df_u["ubicacion"] == f_lote].iloc[0]
-                costo_base = float(row_u.get('precio', row_u.get('costo', 0.0)))
-                st.info(f"💰 Costo de Lista para {f_lote}: {fmt_moneda(costo_base)}")
+                
+                # JALAMOS PRECIO Y COMISIÓN SUGERIDOS (con seguridad por si no existen las columnas)
+                costo_base = float(row_u.get('precio', 0.0))
+                comision_base = float(row_u.get('comision', 0.0))
+                
+                st.info(f"💰 Datos sugeridos para {f_lote}: Precio {fmt_moneda(costo_base)} | Comisión {fmt_moneda(comision_base)}")
 
                 with st.form("form_nueva_venta_modular"):
                     c1, c2 = st.columns(2)
@@ -46,10 +53,12 @@ def render_ventas(df_v, df_u, df_cl, df_vd, conn, URL_SHEET, fmt_moneda):
                     f_eng = cf2.number_input("Enganche Recibido ($)", min_value=0.0)
                     
                     cf1_b, cf2_b = st.columns(2)
-                    f_comision = cf1_b.number_input("Monto de Comisión ($)", min_value=0.0, value=0.0)
+                    # AQUÍ SE ASIGNA LA COMISIÓN AUTOMÁTICAMENTE
+                    f_comision = cf1_b.number_input("Monto de Comisión ($)", min_value=0.0, value=comision_base)
                     f_pla = cf2_b.number_input("🕒 Plazo en Meses", min_value=1, value=12)
                     
                     st.markdown("---")
+                    # Cálculo de mensualidad
                     m_calc = (f_tot - f_eng) / f_pla if f_pla > 0 else 0
                     
                     col_met, col_btn = st.columns([2, 1])
@@ -67,34 +76,50 @@ def render_ventas(df_v, df_u, df_cl, df_vd, conn, URL_SHEET, fmt_moneda):
                         if cliente_final == "-- SELECCIONAR --" or not cliente_final:
                             st.error("❌ Error: Debe asignar un cliente.")
                         else:
+                            # Alta rápida de cliente si es nuevo
                             if f_cli_nuevo:
                                 nid_c = int(df_cl["id_cliente"].max() + 1) if not df_cl.empty else 1
                                 nuevo_cli = pd.DataFrame([{"id_cliente": nid_c, "nombre": f_cli_nuevo, "telefono": "", "correo": ""}])
                                 df_cl = pd.concat([df_cl, nuevo_cli], ignore_index=True)
                                 conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=df_cl)
                             
+                            # Alta rápida de vendedor si es nuevo
                             if f_vende_nuevo:
                                 nid_v = int(df_vd["id_vendedor"].max() + 1) if not df_vd.empty else 1
                                 nuevo_vd = pd.DataFrame([{"id_vendedor": nid_v, "nombre": f_vende_nuevo, "telefono": "", "comision_base": 0}])
                                 df_vd = pd.concat([df_vd, nuevo_vd], ignore_index=True)
                                 conn.update(spreadsheet=URL_SHEET, worksheet="vendedores", data=df_vd)
 
+                            # Registro de la venta
                             nid_vta = int(df_v["id_venta"].max() + 1) if not df_v.empty else 1
                             nueva_v = pd.DataFrame([{
-                                "id_venta": nid_vta, "fecha": f_fec.strftime('%Y-%m-%d'), "ubicacion": f_lote,
-                                "cliente": cliente_final, "vendedor": vendedor_final, "precio_total": f_tot,
-                                "enganche": f_eng, "plazo_meses": f_pla, "mensualidad": m_calc, 
-                                "comision": f_comision, "comentarios": f_coment, "estatus_pago": "Activo"
+                                "id_venta": nid_vta, 
+                                "fecha": f_fec.strftime('%Y-%m-%d'), 
+                                "ubicacion": f_lote,
+                                "cliente": cliente_final, 
+                                "vendedor": vendedor_final, 
+                                "precio_total": f_tot,
+                                "enganche": f_eng, 
+                                "plazo_meses": f_pla, 
+                                "mensualidad": m_calc, 
+                                "comision": f_comision, 
+                                "comentarios": f_coment, 
+                                "estatus_pago": "Activo"
                             }])
+                            
                             df_v = pd.concat([df_v, nueva_v], ignore_index=True)
+                            # Actualizar estatus del lote en ubicaciones
                             df_u.loc[df_u["ubicacion"] == f_lote, "estatus"] = "Vendido"
                             
                             conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=df_v)
                             conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
-                            st.success("✅ Venta registrada con éxito."); st.cache_data.clear(); st.rerun()
+                            
+                            st.success("✅ Venta registrada con éxito.")
+                            st.cache_data.clear()
+                            st.rerun()
 
     # ---------------------------------------------------------
-    # PESTAÑA 2: EDITOR
+    # PESTAÑA 2: EDITOR DE VENTAS
     # ---------------------------------------------------------
     with tab_editar:
         st.subheader("Modificar Venta Existente")
@@ -133,42 +158,35 @@ def render_ventas(df_v, df_u, df_cl, df_vd, conn, URL_SHEET, fmt_moneda):
                     if st.form_submit_button("💾 Guardar Cambios"):
                         idx = df_v[df_v["ubicacion"] == id_ubi_sel].index[0]
                         df_v.at[idx, "fecha"] = e_fec.strftime('%Y-%m-%d')
-                        df_v.at[idx, "cliente"], df_v.at[idx, "vendedor"] = e_cli, e_vende
-                        df_v.at[idx, "precio_total"], df_v.at[idx, "enganche"] = e_tot, e_eng
-                        df_v.at[idx, "plazo_meses"], df_v.at[idx, "mensualidad"] = e_pla, e_mensu
+                        df_v.at[idx, "cliente"] = e_cli
+                        df_v.at[idx, "vendedor"] = e_vende
+                        df_v.at[idx, "precio_total"] = e_tot
+                        df_v.at[idx, "enganche"] = e_eng
+                        df_v.at[idx, "plazo_meses"] = e_pla
+                        df_v.at[idx, "mensualidad"] = e_mensu
                         df_v.at[idx, "comision"] = e_com
                         
                         conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=df_v)
-                        st.success("¡Actualizado!"); st.cache_data.clear(); st.rerun()
+                        st.success("¡Actualizado!")
+                        st.cache_data.clear()
+                        st.rerun()
 
     # ---------------------------------------------------------
-    # PESTAÑA 3: HISTORIAL (FORMATO PROFESIONAL)
+    # PESTAÑA 3: HISTORIAL
     # ---------------------------------------------------------
     with tab_lista:
         if not df_v.empty:
-            # 1. Filtramos y Renombramos columnas a "Nombre Propio"
-            # Creamos un diccionario de mapeo para los nombres
             nuevos_nombres = {
-                "fecha": "Fecha",
-                "ubicacion": "Ubicación",
-                "cliente": "Cliente",
-                "vendedor": "Vendedor",
-                "precio_total": "Precio Total",
-                "enganche": "Enganche",
-                "plazo_meses": "Plazo (Meses)",
-                "mensualidad": "Mensualidad",
-                "comision": "Comisión",
-                "comentarios": "Comentarios",
-                "estatus_pago": "Estatus"
+                "fecha": "Fecha", "ubicacion": "Ubicación", "cliente": "Cliente",
+                "vendedor": "Vendedor", "precio_total": "Precio Total",
+                "enganche": "Enganche", "plazo_meses": "Plazo (Meses)",
+                "mensualidad": "Mensualidad", "comision": "Comisión",
+                "comentarios": "Comentarios", "estatus_pago": "Estatus"
             }
             
-            # Seleccionamos columnas (sin id_venta) y renombramos
             df_historial = df_v.drop(columns=["id_venta"], errors="ignore").rename(columns=nuevos_nombres)
-
-            # 2. Aseguramos formato de fecha
             df_historial['Fecha'] = pd.to_datetime(df_historial['Fecha'])
 
-            # 3. Aplicamos Estilos (Formatos + Centrado de encabezados)
             df_final = df_historial.style.format({
                 "Fecha": lambda t: t.strftime('%d-%b-%Y'),
                 "Precio Total": "$ {:,.2f}",
@@ -177,15 +195,9 @@ def render_ventas(df_v, df_u, df_cl, df_vd, conn, URL_SHEET, fmt_moneda):
                 "Comisión": "$ {:,.2f}",
                 "Plazo (Meses)": "{:,.0f}"
             }).set_table_styles([
-                # Este bloque de CSS centra el texto de los encabezados (th)
                 {'selector': 'th', 'props': [('text-align', 'center'), ('background-color', '#f0f2f6')]}
             ])
 
-            # 4. Renderizamos
-            st.dataframe(
-                df_final, 
-                use_container_width=True, 
-                hide_index=True
-            )
+            st.dataframe(df_final, use_container_width=True, hide_index=True)
         else:
             st.info("No hay historial de ventas.")
