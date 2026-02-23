@@ -7,13 +7,10 @@ def render_ventas(df_v, df_u, df_cl, df_vd, conn, URL_SHEET, fmt_moneda):
     
     tab_nueva, tab_editar, tab_lista = st.tabs(["✨ Nueva Venta", "✏️ Editor de Ventas", "📋 Historial"])
 
-    # ---------------------------------------------------------
-    # PESTAÑA 1: NUEVA VENTA
-    # ---------------------------------------------------------
+    # --- PESTAÑA 1: NUEVA VENTA ---
     with tab_nueva:
         st.subheader("Registrar Contrato Nuevo")
         
-        # Filtramos solo los lotes disponibles
         lotes_libres = df_u[df_u["estatus"] == "Disponible"]["ubicacion"].tolist()
         
         if not lotes_libres:
@@ -22,10 +19,7 @@ def render_ventas(df_v, df_u, df_cl, df_vd, conn, URL_SHEET, fmt_moneda):
             f_lote = st.selectbox("📍 Seleccione Lote a Vender", ["--"] + lotes_libres, key="nv_lote")
             
             if f_lote != "--":
-                # EXTRAEMOS LA FILA DE LA UBICACIÓN SELECCIONADA
                 row_u = df_u[df_u["ubicacion"] == f_lote].iloc[0]
-                
-                # JALAMOS PRECIO Y COMISIÓN SUGERIDOS (con seguridad por si no existen las columnas)
                 costo_base = float(row_u.get('precio', 0.0))
                 comision_base = float(row_u.get('comision', 0.0))
                 
@@ -53,14 +47,10 @@ def render_ventas(df_v, df_u, df_cl, df_vd, conn, URL_SHEET, fmt_moneda):
                     f_eng = cf2.number_input("Enganche Recibido ($)", min_value=0.0)
                     
                     cf1_b, cf2_b = st.columns(2)
-                    # AQUÍ SE ASIGNA LA COMISIÓN AUTOMÁTICAMENTE
                     f_comision = cf1_b.number_input("Monto de Comisión ($)", min_value=0.0, value=comision_base)
                     f_pla = cf2_b.number_input("🕒 Plazo en Meses", min_value=1, value=12)
                     
-                    st.markdown("---")
-                    # Cálculo de mensualidad
                     m_calc = (f_tot - f_eng) / f_pla if f_pla > 0 else 0
-                    
                     col_met, col_btn = st.columns([2, 1])
                     col_met.metric("Mensualidad Resultante", fmt_moneda(m_calc))
                     
@@ -76,21 +66,18 @@ def render_ventas(df_v, df_u, df_cl, df_vd, conn, URL_SHEET, fmt_moneda):
                         if cliente_final == "-- SELECCIONAR --" or not cliente_final:
                             st.error("❌ Error: Debe asignar un cliente.")
                         else:
-                            # Alta rápida de cliente si es nuevo
                             if f_cli_nuevo:
                                 nid_c = int(df_cl["id_cliente"].max() + 1) if not df_cl.empty else 1
                                 nuevo_cli = pd.DataFrame([{"id_cliente": nid_c, "nombre": f_cli_nuevo, "telefono": "", "correo": ""}])
                                 df_cl = pd.concat([df_cl, nuevo_cli], ignore_index=True)
                                 conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=df_cl)
                             
-                            # Alta rápida de vendedor si es nuevo
                             if f_vende_nuevo:
                                 nid_v = int(df_vd["id_vendedor"].max() + 1) if not df_vd.empty else 1
                                 nuevo_vd = pd.DataFrame([{"id_vendedor": nid_v, "nombre": f_vende_nuevo, "telefono": "", "comision_base": 0}])
                                 df_vd = pd.concat([df_vd, nuevo_vd], ignore_index=True)
                                 conn.update(spreadsheet=URL_SHEET, worksheet="vendedores", data=df_vd)
 
-                            # Registro de la venta
                             nid_vta = int(df_v["id_venta"].max() + 1) if not df_v.empty else 1
                             nueva_v = pd.DataFrame([{
                                 "id_venta": nid_vta, 
@@ -108,33 +95,30 @@ def render_ventas(df_v, df_u, df_cl, df_vd, conn, URL_SHEET, fmt_moneda):
                             }])
                             
                             df_v = pd.concat([df_v, nueva_v], ignore_index=True)
-                            # Actualizar estatus del lote en ubicaciones
                             df_u.loc[df_u["ubicacion"] == f_lote, "estatus"] = "Vendido"
                             
                             conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=df_v)
                             conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
                             
                             st.success("✅ Venta registrada con éxito.")
-                            st.cache_data.clear()
-                            st.rerun()
+                            st.cache_data.clear(); st.rerun()
 
-    # ---------------------------------------------------------
-    # PESTAÑA 2: EDITOR DE VENTAS
-    # ---------------------------------------------------------
+    # --- PESTAÑA 2: EDITOR Y ARCHIVADO ---
     with tab_editar:
-        st.subheader("Modificar Venta Existente")
+        st.subheader("Modificar o Archivar Venta")
         if df_v.empty:
             st.info("No hay ventas para editar.")
         else:
             lista_ventas = (df_v["ubicacion"] + " | " + df_v["cliente"]).tolist()
-            edit_sel = st.selectbox("Seleccione la venta a corregir", ["--"] + lista_ventas)
+            edit_sel = st.selectbox("Seleccione la venta a gestionar", ["--"] + lista_ventas)
             
             if edit_sel != "--":
                 id_ubi_sel = edit_sel.split(" | ")[0]
-                datos_v = df_v[df_v["ubicacion"] == id_ubi_sel].iloc[0]
+                idx_vta = df_v[df_v["ubicacion"] == id_ubi_sel].index[0]
+                datos_v = df_v.loc[idx_vta]
                 
                 with st.form("form_editor_ventas_mod"):
-                    st.write(f"✏️ Editando: **{id_ubi_sel}**")
+                    st.write(f"✏️ Gestionando: **{id_ubi_sel}**")
                     ce1, ce2 = st.columns(2)
                     e_fec = ce1.date_input("Fecha", value=pd.to_datetime(datos_v["fecha"]))
                     
@@ -154,26 +138,58 @@ def render_ventas(df_v, df_u, df_cl, df_vd, conn, URL_SHEET, fmt_moneda):
                     
                     e_mensu = (e_tot - e_eng) / e_pla
                     st.metric("Nueva Mensualidad", fmt_moneda(e_mensu))
+
+                    st.markdown("---")
+                    st.write("⚠️ **Zona de Archivado (Cancelación)**")
+                    f_motivo_arch = st.text_input("Motivo de la cancelación (Obligatorio para archivar)", placeholder="Ej: Cliente dejó de pagar / Solicitó devolución")
                     
-                    if st.form_submit_button("💾 Guardar Cambios"):
-                        idx = df_v[df_v["ubicacion"] == id_ubi_sel].index[0]
-                        df_v.at[idx, "fecha"] = e_fec.strftime('%Y-%m-%d')
-                        df_v.at[idx, "cliente"] = e_cli
-                        df_v.at[idx, "vendedor"] = e_vende
-                        df_v.at[idx, "precio_total"] = e_tot
-                        df_v.at[idx, "enganche"] = e_eng
-                        df_v.at[idx, "plazo_meses"] = e_pla
-                        df_v.at[idx, "mensualidad"] = e_mensu
-                        df_v.at[idx, "comision"] = e_com
+                    btn_save, btn_arch = st.columns(2)
+                    
+                    if btn_save.form_submit_button("💾 GUARDAR CAMBIOS"):
+                        df_v.at[idx_vta, "fecha"] = e_fec.strftime('%Y-%m-%d')
+                        df_v.at[idx_vta, "cliente"] = e_cli
+                        df_v.at[idx_vta, "vendedor"] = e_vende
+                        df_v.at[idx_vta, "precio_total"] = e_tot
+                        df_v.at[idx_vta, "enganche"] = e_eng
+                        df_v.at[idx_vta, "plazo_meses"] = e_pla
+                        df_v.at[idx_vta, "mensualidad"] = e_mensu
+                        df_v.at[idx_vta, "comision"] = e_com
                         
                         conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=df_v)
-                        st.success("¡Actualizado!")
-                        st.cache_data.clear()
-                        st.rerun()
+                        st.success("¡Venta actualizada!"); st.cache_data.clear(); st.rerun()
 
-    # ---------------------------------------------------------
-    # PESTAÑA 3: HISTORIAL
-    # ---------------------------------------------------------
+                    if btn_arch.form_submit_button("📦 ARCHIVAR Y LIBERAR LOTE"):
+                        if not f_motivo_arch:
+                            st.warning("⚠️ Por favor escribe el motivo para poder archivar la venta.")
+                        else:
+                            # 1. Preparar datos para 'archivo'
+                            registro_archivo = datos_v.to_frame().T
+                            registro_archivo["fecha_cancelacion"] = datetime.now().strftime('%Y-%m-%d')
+                            registro_archivo["motivo_cancelacion"] = f_motivo_arch
+                            
+                            # Intentar cargar pestaña archivo o crearla
+                            try:
+                                df_arch = conn.read(spreadsheet=URL_SHEET, worksheet="archivo")
+                            except:
+                                df_arch = pd.DataFrame()
+                            
+                            df_arch = pd.concat([df_arch, registro_archivo], ignore_index=True)
+                            
+                            # 2. Eliminar de ventas activas
+                            df_v = df_v.drop(idx_vta)
+                            
+                            # 3. Liberar ubicación
+                            df_u.loc[df_u["ubicacion"] == id_ubi_sel, "estatus"] = "Disponible"
+                            
+                            # Actualizar todo en Sheets
+                            conn.update(spreadsheet=URL_SHEET, worksheet="archivo", data=df_arch)
+                            conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=df_v)
+                            conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
+                            
+                            st.error(f"✅ Venta de {id_ubi_sel} archivada. El lote ahora está Disponible.")
+                            st.cache_data.clear(); st.rerun()
+
+    # --- PESTAÑA 3: HISTORIAL ---
     with tab_lista:
         if not df_v.empty:
             nuevos_nombres = {
@@ -183,21 +199,7 @@ def render_ventas(df_v, df_u, df_cl, df_vd, conn, URL_SHEET, fmt_moneda):
                 "mensualidad": "Mensualidad", "comision": "Comisión",
                 "comentarios": "Comentarios", "estatus_pago": "Estatus"
             }
-            
             df_historial = df_v.drop(columns=["id_venta"], errors="ignore").rename(columns=nuevos_nombres)
-            df_historial['Fecha'] = pd.to_datetime(df_historial['Fecha'])
-
-            df_final = df_historial.style.format({
-                "Fecha": lambda t: t.strftime('%d-%b-%Y'),
-                "Precio Total": "$ {:,.2f}",
-                "Enganche": "$ {:,.2f}",
-                "Mensualidad": "$ {:,.2f}",
-                "Comisión": "$ {:,.2f}",
-                "Plazo (Meses)": "{:,.0f}"
-            }).set_table_styles([
-                {'selector': 'th', 'props': [('text-align', 'center'), ('background-color', '#f0f2f6')]}
-            ])
-
-            st.dataframe(df_final, use_container_width=True, hide_index=True)
+            st.dataframe(df_historial, use_container_width=True, hide_index=True)
         else:
             st.info("No hay historial de ventas.")
