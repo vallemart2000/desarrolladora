@@ -126,3 +126,4 @@ elif menu == "👥 Clientes":
     df_cl = cargar_datos("clientes")
     render_clientes(df_cl, conn, URL_SHEET, cargar_datos)
 
+
