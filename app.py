@@ -27,17 +27,22 @@ def fmt_moneda(valor):
     except (ValueError, TypeError):
         return "$ 0.00"
 
-# --- FUNCIONES DE APOYO CON CACHÉ ---
+# --- FUNCIÓN DE CARGA CON PARCHE PARA TABLAS VACÍAS ---
 @st.cache_data(ttl=300)
 def cargar_datos(pestana):
     try:
         df = conn.read(spreadsheet=URL_SHEET, worksheet=pestana)
+        
         if df is None or df.empty:
-            st.sidebar.warning(f"La pestaña '{pestana}' no devolvió datos.")
+            if pestana == "ventas":
+                return pd.DataFrame(columns=["fecha", "monto", "cliente", "lote", "vendedor", "comision"])
+            if pestana == "pagos":
+                return pd.DataFrame(columns=["fecha", "monto", "lote", "concepto"])
             return pd.DataFrame()
+            
         return df
     except Exception as e:
-        st.sidebar.error(f"Error de conexión en '{pestana}': {e}")
+        st.sidebar.error(f"⚠️ Error en pestaña '{pestana}': {str(e)[:50]}")
         return pd.DataFrame()
 
 # --- BARRA LATERAL (SIDEBAR) ---
@@ -47,16 +52,7 @@ with st.sidebar:
     st.subheader("Navegación")
     menu = st.radio(
         "Seleccione un módulo:",
-        [
-            "🏠 Inicio (Cartera)", 
-            "📈 Reportes Financieros",
-            "📝 Ventas", 
-            "📊 Detalle de Crédito", 
-            "💰 Cobranza", 
-            "💸 Gastos", 
-            "📍 Ubicaciones", 
-            "👥 Clientes"
-        ]
+        ["🏠 Inicio (Cartera)", "📈 Reportes Financieros", "📝 Ventas", "📊 Detalle de Crédito", "💰 Cobranza", "💸 Gastos", "📍 Ubicaciones", "👥 Clientes"]
     )
     
     st.divider()
@@ -67,38 +63,29 @@ with st.sidebar:
 
     st.markdown("---")
     st.write("### 🌐 Sistema")
-    st.success("✅ Conectado a Google Cloud")
+    st.success("✅ Conectado")
     ahora = datetime.now().strftime("%H:%M:%S")
     st.info(f"Sincronizado: {ahora}")
 
 # --- RENDERIZADO DE MÓDULOS ---
 if menu == "🏠 Inicio (Cartera)":
-    df_v = cargar_datos("ventas")
-    df_p = cargar_datos("pagos")
-    df_cl = cargar_datos("clientes")
+    df_v, df_p, df_cl = cargar_datos("ventas"), cargar_datos("pagos"), cargar_datos("clientes")
     render_inicio(df_v, df_p, df_cl, fmt_moneda)
 
 elif menu == "📈 Reportes Financieros":
-    df_v = cargar_datos("ventas")
-    df_p = cargar_datos("pagos")
-    df_g = cargar_datos("gastos")
+    df_v, df_p, df_g = cargar_datos("ventas"), cargar_datos("pagos"), cargar_datos("gastos")
     render_reportes(df_v, df_p, df_g, fmt_moneda)
 
 elif menu == "📝 Ventas":
-    df_v = cargar_datos("ventas")
-    df_u = cargar_datos("ubicaciones")
-    df_cl = cargar_datos("clientes")
-    df_vd = cargar_datos("vendedores")
+    df_v, df_u, df_cl, df_vd = cargar_datos("ventas"), cargar_datos("ubicaciones"), cargar_datos("clientes"), cargar_datos("vendedores")
     render_ventas(df_v, df_u, df_cl, df_vd, conn, URL_SHEET, fmt_moneda)
 
 elif menu == "📊 Detalle de Crédito":
-    df_v = cargar_datos("ventas")
-    df_p = cargar_datos("pagos")
+    df_v, df_p = cargar_datos("ventas"), cargar_datos("pagos")
     render_detalle_credito(df_v, df_p, fmt_moneda)
 
 elif menu == "💰 Cobranza":
-    df_v = cargar_datos("ventas")
-    df_p = cargar_datos("pagos")
+    df_v, df_p = cargar_datos("ventas"), cargar_datos("pagos")
     render_cobranza(df_v, df_p, conn, URL_SHEET, fmt_moneda, cargar_datos)
 
 elif menu == "💸 Gastos":
