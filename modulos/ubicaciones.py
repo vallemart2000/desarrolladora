@@ -15,7 +15,7 @@ def render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos):
     else:
         df_mostrar = df_u.copy()
 
-    # Selección de columnas visibles (Agregamos comision a la vista)
+    # Selección de columnas visibles
     columnas_visibles = ["ubicacion", "fase", "manzana", "lote", "precio", "comision", "estatus"]
     cols_existentes = [c for c in columnas_visibles if c in df_mostrar.columns]
     
@@ -23,7 +23,9 @@ def render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos):
 
     tab_nueva, tab_editar = st.tabs(["✨ Agregar Ubicación", "✏️ Editar Registro"])
 
-    # --- PESTAÑA 1: AGREGAR NUEVA UBICACIÓN ---
+    # ---------------------------------------------------------
+    # PESTAÑA 1: AGREGAR NUEVA UBICACIÓN
+    # ---------------------------------------------------------
     with tab_nueva:
         with st.form("form_nueva_ubi"):
             st.subheader("Registrar Nuevo Lote")
@@ -34,7 +36,7 @@ def render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos):
             f_fase = c1.text_input("🏗️ Fase / Etapa", placeholder="Ej: Fase 1")
             f_pre = c2.number_input("💵 Precio de Lista ($)", min_value=0.0, step=1000.0)
             
-            # --- NUEVO CAMPO: COMISIÓN ---
+            # COMISIÓN
             f_com = c1.number_input("💰 Comisión Sugerida ($)", min_value=0.0, step=500.0)
             
             # Generación de ID automática
@@ -49,6 +51,14 @@ def render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos):
             st.info(f"💡 Ubicación a registrar: **{nombre_gen}** (ID interno: {nuevo_id_sugerido})")
 
             if st.form_submit_button("➕ AGREGAR AL INVENTARIO"):
+                # --- REGLA DE VALIDACIÓN: NO DUPLICADOS ---
+                if not df_u.empty and "ubicacion" in df_u.columns:
+                    existe = df_u[df_u["ubicacion"] == nombre_gen]
+                    if not existe.empty:
+                        st.error(f"❌ Error: La ubicación **{nombre_gen}** ya existe en el inventario. No se permiten duplicados.")
+                        return # Detiene la ejecución para no guardar
+                
+                # Si pasa la validación, procedemos a guardar
                 nueva_fila = pd.DataFrame([{
                     "id_lote": nuevo_id_sugerido,
                     "ubicacion": nombre_gen,
@@ -56,18 +66,19 @@ def render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos):
                     "lote": f_lote,
                     "fase": f_fase,
                     "precio": f_pre,
-                    "comision": f_com, # Guardamos la comisión
+                    "comision": f_com,
                     "estatus": "Disponible"
                 }])
                 
                 df_u = pd.concat([df_u, nueva_fila], ignore_index=True)
                 conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
-                st.success(f"✅ Lote {nombre_gen} agregado."); st.cache_data.clear(); st.rerun()
+                st.success(f"✅ Lote {nombre_gen} agregado exitosamente."); st.cache_data.clear(); st.rerun()
 
-    # --- PESTAÑA 2: EDITAR REGISTROS ---
+    # ---------------------------------------------------------
+    # PESTAÑA 2: EDITAR REGISTROS
+    # ---------------------------------------------------------
     with tab_editar:
         if not df_u.empty:
-            # Aseguramos que id_lote sea manejable
             ubi_lista = (df_u["id_lote"].astype(str) + " | " + df_u["ubicacion"]).tolist()
             u_sel = st.selectbox("Seleccione el lote a modificar:", ["--"] + ubi_lista)
             
@@ -80,8 +91,6 @@ def render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos):
                     st.write(f"✏️ Editando: **{row['ubicacion']}**")
                     ce1, ce2 = st.columns(2)
                     e_pre = ce1.number_input("Precio Actualizado ($)", min_value=0.0, value=float(row.get("precio", 0.0)))
-                    
-                    # --- EDICIÓN DE COMISIÓN ---
                     e_com = ce2.number_input("Comisión Actualizada ($)", min_value=0.0, value=float(row.get("comision", 0.0)))
                     
                     e_est = ce1.selectbox("Estatus", ["Disponible", "Vendido", "Apartado", "Bloqueado"], 
@@ -91,7 +100,7 @@ def render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos):
                     cb1, cb2 = st.columns(2)
                     if cb1.form_submit_button("💾 GUARDAR CAMBIOS"):
                         df_u.at[idx, "precio"] = e_pre
-                        df_u.at[idx, "comision"] = e_com # Actualizamos comisión
+                        df_u.at[idx, "comision"] = e_com
                         df_u.at[idx, "estatus"] = e_est
                         df_u.at[idx, "fase"] = e_fas
                         
