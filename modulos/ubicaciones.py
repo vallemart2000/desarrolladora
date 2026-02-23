@@ -4,7 +4,7 @@ import pandas as pd
 def render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos):
     st.title("📍 Gestión de Inventario (Ubicaciones)")
 
-    tab_lista, tab_nuevo = st.tabs(["📋 Inventario Actual", "➕ Agregar Lote"])
+    tab_lista, tab_nuevo, tab_editar = st.tabs(["📋 Inventario Actual", "➕ Agregar Lote", "✏️ Editar Ubicación"])
 
     # --- PESTAÑA 1: LISTA ---
     with tab_lista:
@@ -46,7 +46,7 @@ def render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos):
             if st.form_submit_button("💾 Guardar Ubicación", type="primary"):
                 if not f_ubi:
                     st.error("❌ La ubicación es obligatoria.")
-                elif f_ubi in df_u["ubicacion"].values:
+                elif f_ubi.strip().upper() in df_u["ubicacion"].values:
                     st.error("❌ Esta ubicación ya existe.")
                 else:
                     # --- LÓGICA ID 1001+ ---
@@ -69,3 +69,41 @@ def render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos):
                     conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_act)
                     st.success(f"✅ Lote {f_ubi} registrado con ID {nuevo_id}.")
                     st.cache_data.clear(); st.rerun()
+
+    # --- PESTAÑA 3: EDITAR REGISTRO ---
+    with tab_editar:
+        st.subheader("Modificar Ubicación Existente")
+        if df_u.empty:
+            st.info("No hay ubicaciones para editar.")
+        else:
+            # Seleccionar por nombre de ubicación
+            opciones_ubi = df_u["ubicacion"].tolist()
+            ubi_sel = st.selectbox("Seleccione la ubicación a modificar", ["--"] + opciones_ubi)
+
+            if ubi_sel != "--":
+                # Obtener datos actuales
+                idx = df_u[df_u["ubicacion"] == ubi_sel].index[0]
+                datos_actuales = df_u.loc[idx]
+
+                with st.form("form_edit_ub"):
+                    st.write(f"🔢 Editando ID: **{datos_actuales['id_lote']}**")
+                    ce1, ce2 = st.columns(2)
+                    
+                    # Campos de edición
+                    e_fase = ce1.selectbox("Fase/Etapa", ["Etapa 1", "Etapa 2", "Etapa 3", "Club"], 
+                                         index=["Etapa 1", "Etapa 2", "Etapa 3", "Club"].index(datos_actuales["fase"]) if datos_actuales["fase"] in ["Etapa 1", "Etapa 2", "Etapa 3", "Club"] else 0)
+                    e_estatus = ce2.selectbox("Estatus", ["Disponible", "Vendido", "Apartado", "Bloqueado"],
+                                            index=["Disponible", "Vendido", "Apartado", "Bloqueado"].index(datos_actuales["estatus"]))
+                    
+                    e_pre = ce1.number_input("Precio de Lista ($)", min_value=0.0, value=float(datos_actuales["precio"]))
+                    e_com = ce2.number_input("Comisión Sugerida ($)", min_value=0.0, value=float(datos_actuales["comision"]))
+
+                    if st.form_submit_button("💾 Guardar Cambios"):
+                        df_u.at[idx, "fase"] = e_fase
+                        df_u.at[idx, "estatus"] = e_estatus
+                        df_u.at[idx, "precio"] = e_pre
+                        df_u.at[idx, "comision"] = e_com
+
+                        conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
+                        st.success(f"✅ Ubicación {ubi_sel} actualizada correctamente.")
+                        st.cache_data.clear(); st.rerun()
