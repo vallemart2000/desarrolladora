@@ -45,12 +45,26 @@ def render_ventas(df_v, df_u, df_cl, df_vd, conn, URL_SHEET, fmt_moneda):
                     st.metric("Mensualidad Resultante", fmt_moneda(m_calc))
                     f_coment = st.text_area("📝 Comentarios")
 
+                    # --- BLOQUE DE CONFIRMACIÓN ---
+                    st.markdown("---")
+                    cliente_display = f_cli_nuevo if f_cli_nuevo else f_cli_sel
+                    vendedor_display = f_vende_nuevo if f_vende_nuevo else f_vende_sel
+                    
+                    st.info(f"""**Resumen de Venta:**
+* **Lote:** {f_lote} | **Cliente:** {cliente_display}
+* **Financiamiento:** {f_pla} meses de {fmt_moneda(m_calc)}
+* **Total:** {fmt_moneda(f_tot)} (Enganche: {fmt_moneda(f_eng)})""")
+                    
+                    confirmar_vta = st.checkbox("Confirmo que los montos y datos del contrato son correctos.")
+
                     if st.form_submit_button("💾 GUARDAR VENTA", type="primary"):
                         cliente_final = f_cli_nuevo if f_cli_nuevo else f_cli_sel
                         vendedor_final = f_vende_nuevo if f_vende_nuevo else f_vende_sel
                         
                         if cliente_final == "-- SELECCIONAR --" or not cliente_final:
                             st.error("❌ Error: Falta el cliente.")
+                        elif not confirmar_vta:
+                            st.error("❌ Debes marcar la casilla de confirmación.")
                         else:
                             # --- LÓGICA ID CLIENTE 1001+ ---
                             if f_cli_nuevo:
@@ -77,7 +91,8 @@ def render_ventas(df_v, df_u, df_cl, df_vd, conn, URL_SHEET, fmt_moneda):
                             
                             conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=df_v)
                             conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
-                            st.success("✅ Venta Exitosa"); st.cache_data.clear(); st.rerun()
+                            st.success(f"✅ Venta del lote {f_lote} registrada correctamente.")
+                            st.cache_data.clear(); st.rerun()
 
     # --- PESTAÑA 2: EDITOR Y ARCHIVO ---
     with tab_editar:
