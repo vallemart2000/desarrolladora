@@ -69,30 +69,25 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
 
     df_cartera[['dias_atraso', 'pago_corriente']] = df_cartera.apply(calcular_atraso, axis=1)
 
-    # --- 5. LÓGICA DE CONTACTO (WHATSAPP Y CORREO) ---
+    # --- 5. LÓGICA DE CONTACTO ---
     def generar_link_wa(row):
         try:
-            # Buscamos el teléfono en df_cl
             tel = df_cl[df_cl['nombre'] == row['cliente']]['telefono'].values[0]
             if not tel or str(tel) == 'nan': return None
-            
             msg = (f"Hola {row['cliente']}, te saludamos de Valle Mart. "
                    f"Notamos un atraso de {row['dias_atraso']} días en tu lote {row['ubicacion']}. "
-                   f"El monto para regularizar es de {fmt_moneda(row['pago_corriente'])}. "
-                   f"¿Cómo podemos apoyarte?")
+                   f"El monto para regularizar es de {fmt_moneda(row['pago_corriente'])}. ¿Cómo podemos apoyarte?")
             return f"https://wa.me/{str(tel).strip()}?text={urllib.parse.quote(msg)}"
         except: return None
 
     def generar_link_mail(row):
         try:
-            # Buscamos el correo en df_cl
             mail = df_cl[df_cl['nombre'] == row['cliente']]['correo'].values[0]
             if not mail or str(mail) == 'nan': return None
-            
             asunto = f"Aviso de Cobranza - Lote {row['ubicacion']}"
             cuerpo = (f"Estimado {row['cliente']},\n\nLe informamos que su cuenta presenta "
                       f"{row['dias_atraso']} días de atraso. El monto sugerido para estar "
-                      f"al corriente es de {fmt_moneda(row['pago_corriente'])}.\n\nSaludos.")
+                      f"al corriente es de {fmt_moneda(row['pago_corriente'])}.")
             return f"mailto:{mail}?subject={urllib.parse.quote(asunto)}&body={urllib.parse.quote(cuerpo)}"
         except: return None
 
@@ -114,12 +109,7 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
     if df_mostrar.empty:
         st.success("✨ Todo al corriente.")
     else:
-        # Columnas reordenadas para mejor lectura
-        cols_finales = [
-            "Estatus Cobro", "ubicacion", "cliente", "fecha_ultimo_pago", 
-            "dias_atraso", "pago_corriente", "WhatsApp", "Invitación Correo"
-        ]
-        
+        cols_finales = ["Estatus Cobro", "ubicacion", "cliente", "fecha_ultimo_pago", "dias_atraso", "pago_corriente", "WhatsApp", "Invitación Correo"]
         st.data_editor(
             df_mostrar[cols_finales],
             column_config={
@@ -129,8 +119,5 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
                 "WhatsApp": st.column_config.LinkColumn("📲 WA", display_text="Enviar"),
                 "Invitación Correo": st.column_config.LinkColumn("📧 Mail", display_text="Enviar")
             },
-            use_container_width=True, 
-            hide_index=True, 
-            disabled=True,
-            key="cartera_v4_links"
+            use_container_width=True, hide_index=True, disabled=True, key="cartera_vFinal"
         )
