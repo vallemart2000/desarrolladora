@@ -9,8 +9,10 @@ def render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos):
     ocultar_vendidos = st.toggle("Ocultar Lotes Vendidos", value=True)
 
     df_mostrar = df_u.copy()
-    if ocultar_vendidos:
+    if ocultar_vendidos and not df_u.empty and "estatus" in df_u.columns:
         df_mostrar = df_u[df_u["estatus"] == "Disponible"]
+    else:
+        df_mostrar = df_u.copy()
 
     # Selección de columnas visibles para el usuario (ID oculto)
     columnas_visibles = ["ubicacion", "fase", "manzana", "lote", "precio", "estatus"]
