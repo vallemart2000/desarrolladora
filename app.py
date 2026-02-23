@@ -23,7 +23,6 @@ URL_SHEET = "https://docs.google.com/spreadsheets/d/15j-kbr6fFk-l_hgzQ28SSxQ3Hhp
 # --- FUNCIÓN PARA FORMATO DE MONEDA ($) ---
 def fmt_moneda(valor):
     try:
-        # Aseguramos el formato solicitado: $ seguido del monto con comas y 2 decimales
         return f"$ {float(valor):,.2f}"
     except (ValueError, TypeError):
         return "$ 0.00"
@@ -43,10 +42,7 @@ def cargar_datos(pestana):
 
 # --- BARRA LATERAL (SIDEBAR) ---
 with st.sidebar:
-    try:
-        st.image("logo.png", use_container_width=True)
-    except:
-        st.title("🏢 Valle Mart")
+    st.title("🏢 Valle Mart")
     
     st.subheader("Navegación")
     menu = st.radio(
