@@ -14,7 +14,7 @@ from modulos.ubicaciones import render_ubicaciones
 from modulos.clientes import render_clientes
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
-st.set_page_config(page_title="Desarrolladora Valle Mart - Gestión Inmobiliaria", layout="wide")
+st.set_page_config(page_title="Valle Mart - Gestión Inmobiliaria", layout="wide", page_icon="🏢")
 
 # --- CONEXIÓN A GOOGLE SHEETS ---
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -31,17 +31,21 @@ def fmt_moneda(valor):
 @st.cache_data(ttl=300)
 def cargar_datos(pestana):
     try:
+        # Forzamos la lectura de la pestaña
         df = conn.read(spreadsheet=URL_SHEET, worksheet=pestana)
         
         if df is None or df.empty:
             if pestana == "ubicaciones":
-                return pd.DataFrame(columns=["id_lote", "ubicacion", "manzana", "lote", "fase", "precio", "estatus"])
+                return pd.DataFrame(columns=["id_lote", "ubicacion", "manzana", "lote", "fase", "precio", "comision", "estatus"])
             if pestana == "ventas":
-                return pd.DataFrame(columns=["fecha", "monto", "cliente", "lote", "vendedor", "comision"])
+                # Agregamos estatus_pago y mensualidad por defecto
+                return pd.DataFrame(columns=["id_venta", "fecha", "ubicacion", "cliente", "vendedor", "precio_total", "enganche", "plazo_meses", "mensualidad", "comision", "estatus_pago"])
             if pestana == "pagos":
                 return pd.DataFrame(columns=["fecha", "monto", "lote", "concepto"])
             if pestana == "clientes":
                 return pd.DataFrame(columns=["id_cliente", "nombre", "telefono", "correo"])
+            if pestana == "vendedores":
+                return pd.DataFrame(columns=["id_vendedor", "nombre", "telefono", "comision_base"])
             return pd.DataFrame()
             
         return df
@@ -67,14 +71,18 @@ with st.sidebar:
 
     st.markdown("---")
     st.write("### 🌐 Sistema")
-    st.success("✅ Conectado")
+    # Indicador visual de estado de conexión
+    st.success("✅ Conectado a la Nube")
     ahora = datetime.now().strftime("%H:%M:%S")
-    st.info(f"Sincronizado: {ahora}")
+    st.info(f"Última Sincronización: {ahora}")
 
 # --- RENDERIZADO DE MÓDULOS ---
+# Pasamos 'conn' y 'URL_SHEET' a los módulos que necesitan guardar datos o autorreparar columnas
+
 if menu == "🏠 Inicio (Cartera)":
     df_v, df_p, df_cl = cargar_datos("ventas"), cargar_datos("pagos"), cargar_datos("clientes")
-    render_inicio(df_v, df_p, df_cl, fmt_moneda)
+    # Agregamos parámetros para que el inicio pueda reparar columnas si faltan
+    render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda)
 
 elif menu == "📈 Reportes Financieros":
     df_v, df_p, df_g = cargar_datos("ventas"), cargar_datos("pagos"), cargar_datos("gastos")
