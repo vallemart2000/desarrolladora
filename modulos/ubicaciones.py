@@ -53,14 +53,12 @@ def render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos):
             nombre_generado = f"M{int(f_mz):02d}-L{int(f_lt):02d}"
             
             st.markdown("---")
-            # --- MENSAJE DE CONFIRMACIÓN ---
-            st.warning(f"📝 **Resumen de registro:** Se creará la ubicación **{nombre_generado}** en la **{f_fase}**.")
-            confirmar_registro = st.checkbox("Confirmo que los datos de Manzana, Lote y Fase son correctos.")
+            # --- MENSAJE INFORMATIVO (Sin restricción de checkbox) ---
+            st.warning(f"📝 **Resumen:** Se registrará como **{nombre_generado}** en la **{f_fase}**.")
             
             if st.form_submit_button("💾 Guardar Ubicación", type="primary"):
-                if not confirmar_registro:
-                    st.error("❌ Debes marcar la casilla de confirmación para proceder.")
-                elif not df_u.empty and nombre_generado in df_u["ubicacion"].values:
+                # Verificar si ya existe esa combinación
+                if not df_u.empty and nombre_generado in df_u["ubicacion"].values:
                     st.error(f"❌ La ubicación {nombre_generado} ya existe en la base de datos.")
                 else:
                     # Lógica ID 1001+
