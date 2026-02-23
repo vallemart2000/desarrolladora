@@ -34,10 +34,14 @@ def cargar_datos(pestana):
         df = conn.read(spreadsheet=URL_SHEET, worksheet=pestana)
         
         if df is None or df.empty:
+            if pestana == "ubicaciones":
+                return pd.DataFrame(columns=["id_lote", "ubicacion", "manzana", "lote", "fase", "precio", "estatus"])
             if pestana == "ventas":
                 return pd.DataFrame(columns=["fecha", "monto", "cliente", "lote", "vendedor", "comision"])
             if pestana == "pagos":
                 return pd.DataFrame(columns=["fecha", "monto", "lote", "concepto"])
+            if pestana == "clientes":
+                return pd.DataFrame(columns=["id_cliente", "nombre", "telefono", "correo"])
             return pd.DataFrame()
             
         return df
