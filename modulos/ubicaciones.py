@@ -2,112 +2,70 @@ import streamlit as st
 import pandas as pd
 
 def render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos):
-    st.title("📍 Control de Inventario")
-    
-    # --- FILTRO TIPO SWITCH (Activo por defecto) ---
-    st.write("### 🔍 Vista de Inventario")
-    ocultar_vendidos = st.toggle("Ocultar Lotes Vendidos", value=True)
+    st.title("📍 Gestión de Inventario (Ubicaciones)")
 
-    df_mostrar = df_u.copy()
-    # Parche de seguridad para estatus
-    if ocultar_vendidos and not df_u.empty and "estatus" in df_u.columns:
-        df_mostrar = df_u[df_u["estatus"] == "Disponible"]
-    else:
-        df_mostrar = df_u.copy()
+    tab_lista, tab_nuevo = st.tabs(["📋 Inventario Actual", "➕ Agregar Lote"])
 
-    # Selección de columnas visibles
-    columnas_visibles = ["ubicacion", "fase", "manzana", "lote", "precio", "comision", "estatus"]
-    cols_existentes = [c for c in columnas_visibles if c in df_mostrar.columns]
-    
-    st.dataframe(df_mostrar[cols_existentes], use_container_width=True, hide_index=True)
-
-    tab_nueva, tab_editar = st.tabs(["✨ Agregar Ubicación", "✏️ Editar Registro"])
-
-    # ---------------------------------------------------------
-    # PESTAÑA 1: AGREGAR NUEVA UBICACIÓN
-    # ---------------------------------------------------------
-    with tab_nueva:
-        with st.form("form_nueva_ubi"):
-            st.subheader("Registrar Nuevo Lote")
+    # --- PESTAÑA 1: LISTA ---
+    with tab_lista:
+        st.subheader("Control de Lotes y Disponibilidad")
+        if df_u.empty:
+            st.info("No hay lotes registrados.")
+        else:
+            # Filtros rápidos
             c1, c2 = st.columns(2)
+            f_estatus = c1.multiselect("Filtrar por Estatus", options=df_u["estatus"].unique(), default=df_u["estatus"].unique())
             
-            f_manzana = c1.number_input("🍎 Manzana", min_value=1, step=1, value=1)
-            f_lote = c2.number_input("🔢 Lote", min_value=1, step=1, value=1)
-            f_fase = c1.text_input("🏗️ Fase / Etapa", placeholder="Ej: Fase 1")
-            f_pre = c2.number_input("💵 Precio de Lista ($)", min_value=0.0, step=1000.0)
-            
-            # COMISIÓN
-            f_com = c1.number_input("💰 Comisión Sugerida ($)", min_value=0.0, step=500.0)
-            
-            # Generación de ID automática
-            nuevo_id_sugerido = 1
-            if not df_u.empty and "id_lote" in df_u.columns:
-                try:
-                    nuevo_id_sugerido = int(float(df_u["id_lote"].max())) + 1
-                except:
-                    nuevo_id_sugerido = len(df_u) + 1
-            
-            nombre_gen = f"M{str(f_manzana).zfill(2)}-L{str(f_lote).zfill(2)}"
-            st.info(f"💡 Ubicación a registrar: **{nombre_gen}** (ID interno: {nuevo_id_sugerido})")
+            df_mostrar = df_u[df_u["estatus"].isin(f_estatus)]
 
-            if st.form_submit_button("➕ AGREGAR AL INVENTARIO"):
-                # --- REGLA DE VALIDACIÓN: NO DUPLICADOS ---
-                if not df_u.empty and "ubicacion" in df_u.columns:
-                    existe = df_u[df_u["ubicacion"] == nombre_gen]
-                    if not existe.empty:
-                        st.error(f"❌ Error: La ubicación **{nombre_gen}** ya existe en el inventario. No se permiten duplicados.")
-                        return # Detiene la ejecución para no guardar
-                
-                # Si pasa la validación, procedemos a guardar
-                nueva_fila = pd.DataFrame([{
-                    "id_lote": nuevo_id_sugerido,
-                    "ubicacion": nombre_gen,
-                    "manzana": f_manzana,
-                    "lote": f_lote,
-                    "fase": f_fase,
-                    "precio": f_pre,
-                    "comision": f_com,
-                    "estatus": "Disponible"
-                }])
-                
-                df_u = pd.concat([df_u, nueva_fila], ignore_index=True)
-                conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
-                st.success(f"✅ Lote {nombre_gen} agregado exitosamente."); st.cache_data.clear(); st.rerun()
+            st.dataframe(
+                df_mostrar,
+                column_config={
+                    "id_lote": st.column_config.NumberColumn("ID", format="%d"),
+                    "precio": st.column_config.NumberColumn("Precio Lista", format="$ %.2f"),
+                    "comision": st.column_config.NumberColumn("Comisión Sugerida", format="$ %.2f"),
+                    "estatus": st.column_config.SelectboxColumn("Estatus", options=["Disponible", "Vendido", "Apartado", "Bloqueado"])
+                },
+                use_container_width=True,
+                hide_index=True
+            )
 
-    # ---------------------------------------------------------
-    # PESTAÑA 2: EDITAR REGISTROS
-    # ---------------------------------------------------------
-    with tab_editar:
-        if not df_u.empty:
-            ubi_lista = (df_u["id_lote"].astype(str) + " | " + df_u["ubicacion"]).tolist()
-            u_sel = st.selectbox("Seleccione el lote a modificar:", ["--"] + ubi_lista)
+    # --- PESTAÑA 2: NUEVO LOTE ---
+    with tab_nuevo:
+        st.subheader("Registrar Nueva Ubicación")
+        with st.form("form_nueva_ub"):
+            col1, col2 = st.columns(2)
+            f_ubi = col1.text_input("Nombre de Ubicación (Ej: M01-L01) *")
+            f_fase = col2.selectbox("Fase/Etapa", ["Etapa 1", "Etapa 2", "Etapa 3", "Club"])
             
-            if u_sel != "--":
-                id_u_sel = int(float(u_sel.split(" | ")[0]))
-                idx = df_u[df_u["id_lote"].astype(float).astype(int) == id_u_sel].index[0]
-                row = df_u.loc[idx]
-                
-                with st.form("form_edit_ubi"):
-                    st.write(f"✏️ Editando: **{row['ubicacion']}**")
-                    ce1, ce2 = st.columns(2)
-                    e_pre = ce1.number_input("Precio Actualizado ($)", min_value=0.0, value=float(row.get("precio", 0.0)))
-                    e_com = ce2.number_input("Comisión Actualizada ($)", min_value=0.0, value=float(row.get("comision", 0.0)))
-                    
-                    e_est = ce1.selectbox("Estatus", ["Disponible", "Vendido", "Apartado", "Bloqueado"], 
-                                         index=["Disponible", "Vendido", "Apartado", "Bloqueado"].index(row["estatus"]))
-                    e_fas = ce2.text_input("Fase", value=str(row.get("fase", "")))
-                    
-                    cb1, cb2 = st.columns(2)
-                    if cb1.form_submit_button("💾 GUARDAR CAMBIOS"):
-                        df_u.at[idx, "precio"] = e_pre
-                        df_u.at[idx, "comision"] = e_com
-                        df_u.at[idx, "estatus"] = e_est
-                        df_u.at[idx, "fase"] = e_fas
-                        
-                        conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
-                        st.success("Cambios guardados."); st.cache_data.clear(); st.rerun()
-                        
-                    if cb2.form_submit_button("🗑️ ELIMINAR"):
-                        df_u = df_u.drop(idx)
-                        conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
-                        st.error("Ubicación eliminada."); st.cache_data.clear(); st.rerun()
+            f_pre = col1.number_input("Precio de Lista ($)", min_value=0.0, step=1000.0)
+            f_com = col2.number_input("Comisión Sugerida ($)", min_value=0.0, step=500.0)
+            
+            st.info("ℹ️ El ID del lote iniciará automáticamente en 1001.")
+            
+            if st.form_submit_button("💾 Guardar Ubicación", type="primary"):
+                if not f_ubi:
+                    st.error("❌ La ubicación es obligatoria.")
+                elif f_ubi in df_u["ubicacion"].values:
+                    st.error("❌ Esta ubicación ya existe.")
+                else:
+                    # --- LÓGICA ID 1001+ ---
+                    if df_u.empty:
+                        nuevo_id = 1001
+                    else:
+                        max_id = df_u["id_lote"].max()
+                        nuevo_id = int(max_id + 1) if max_id >= 1001 else 1001
+
+                    nueva_ub = pd.DataFrame([{
+                        "id_lote": nuevo_id,
+                        "ubicacion": f_ubi.strip().upper(),
+                        "fase": f_fase,
+                        "precio": f_pre,
+                        "comision": f_com,
+                        "estatus": "Disponible"
+                    }])
+
+                    df_act = pd.concat([df_u, nueva_ub], ignore_index=True)
+                    conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_act)
+                    st.success(f"✅ Lote {f_ubi} registrado con ID {nuevo_id}.")
+                    st.cache_data.clear(); st.rerun()
