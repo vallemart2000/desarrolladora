@@ -60,7 +60,7 @@ with st.sidebar:
     st.subheader("Navegación")
     menu = st.radio(
         "Seleccione un módulo:",
-        ["🏠 Inicio (Cartera)", "📈 Reportes Financieros", "📝 Ventas", "📊 Detalle de Crédito", "💰 Cobranza", "💸 Gastos", "📍 Ubicaciones", "👥 Clientes"]
+        ["🏠 Inicio (Cartera)", "📈 Reportes Financieros", "📝 Ventas", "📊 Detalle de Crédito", "💰 Cobranza", "💸 Gastos", "📍 Ubicaciones", "👥 Directorio"]
     )
     
     st.divider()
@@ -108,8 +108,6 @@ elif menu == "📍 Ubicaciones":
     df_u = cargar_datos("ubicaciones")
     render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos)
 
-elif menu == "👥 Clientes":
-    df_cl = cargar_datos("clientes")
+elif menu == "👥 Directorio":
+    df_cl = cargar_datos("directorio")
     render_directorio(df_cl, conn, URL_SHEET, cargar_datos)
-
-
