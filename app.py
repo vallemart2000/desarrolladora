@@ -108,8 +108,6 @@ elif menu == "📍 Ubicaciones":
     df_u = cargar_datos("ubicaciones")
     render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos)
 
-# ... (resto del código igual hasta llegar al menu de Directorio)
-
 elif menu == "👥 Directorio":
     df_cl = cargar_datos("clientes")
     df_vd = cargar_datos("vendedores")
