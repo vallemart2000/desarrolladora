@@ -31,21 +31,32 @@ def fmt_moneda(valor):
 @st.cache_data(ttl=300)
 def cargar_datos(pestana):
     try:
-        # Forzamos la lectura de la pestaña
         df = conn.read(spreadsheet=URL_SHEET, worksheet=pestana)
         
         if df is None or df.empty:
             if pestana == "ubicaciones":
-                return pd.DataFrame(columns=["id_lote", "ubicacion", "manzana", "lote", "fase", "precio", "comision", "estatus"])
+                # Cambiamos 'comision' por 'enganche_req'
+                return pd.DataFrame(columns=["id_lote", "ubicacion", "manzana", "lote", "fase", "precio", "enganche_req", "estatus"])
+            
             if pestana == "ventas":
-                # Agregamos estatus_pago y mensualidad por defecto
-                return pd.DataFrame(columns=["id_venta", "fecha", "ubicacion", "cliente", "vendedor", "precio_total", "enganche", "plazo_meses", "mensualidad", "comision", "estatus_pago"])
+                # Estructura robusta para soportar Apartados y Ventas
+                return pd.DataFrame(columns=[
+                    "id_venta", "fecha_registro", "fecha_contrato", "inicio_mensualidades", 
+                    "ubicacion", "cliente", "vendedor", "precio_total", 
+                    "enganche_pagado", "enganche_requerido", "plazo_meses", 
+                    "mensualidad", "estatus_pago", "comentarios"
+                ])
+            
             if pestana == "pagos":
-                return pd.DataFrame(columns=["fecha", "monto", "lote", "concepto"])
+                # Estandarizamos columnas de pagos
+                return pd.DataFrame(columns=["id_pago", "fecha", "ubicacion", "cliente", "monto", "metodo", "folio", "comentarios"])
+            
             if pestana == "clientes":
                 return pd.DataFrame(columns=["id_cliente", "nombre", "telefono", "correo"])
+            
             if pestana == "vendedores":
                 return pd.DataFrame(columns=["id_vendedor", "nombre", "telefono", "comision_base"])
+                
             return pd.DataFrame()
             
         return df
@@ -71,17 +82,15 @@ with st.sidebar:
 
     st.markdown("---")
     st.write("### 🌐 Sistema")
-    # Indicador visual de estado de conexión
     st.success("✅ Conectado a la Nube")
     ahora = datetime.now().strftime("%H:%M:%S")
     st.info(f"Última Sincronización: {ahora}")
 
 # --- RENDERIZADO DE MÓDULOS ---
-# Pasamos 'conn' y 'URL_SHEET' a los módulos que necesitan guardar datos o autorreparar columnas
 
 if menu == "🏠 Inicio (Cartera)":
-    df_v, df_p, df_cl = cargar_datos("ventas"), cargar_datos("pagos"), cargar_datos("directorio")
-    # Agregamos parámetros para que el inicio pueda reparar columnas si faltan
+    # Corregido: Cargamos 'clientes' en lugar de 'directorio'
+    df_v, df_p, df_cl = cargar_datos("ventas"), cargar_datos("pagos"), cargar_datos("clientes")
     render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda)
 
 elif menu == "📈 Reportes Financieros":
@@ -94,6 +103,7 @@ elif menu == "📝 Ventas":
     df_cl = cargar_datos("clientes")
     df_vd = cargar_datos("vendedores")
     df_p = cargar_datos("pagos")
+    # Llamada actualizada con df_p para soportar el archivado de pagos
     render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda)
 
 elif menu == "📊 Detalle de Crédito":
@@ -102,6 +112,7 @@ elif menu == "📊 Detalle de Crédito":
 
 elif menu == "💰 Cobranza":
     df_v, df_p = cargar_datos("ventas"), cargar_datos("pagos")
+    # Pasamos cargar_datos para que cobranza pueda actualizar 'ubicaciones' al formalizar
     render_cobranza(df_v, df_p, conn, URL_SHEET, fmt_moneda, cargar_datos)
 
 elif menu == "💸 Gastos":
@@ -116,4 +127,3 @@ elif menu == "👥 Directorio":
     df_cl = cargar_datos("clientes")
     df_vd = cargar_datos("vendedores")
     render_directorio(df_cl, df_vd, conn, URL_SHEET)
-
