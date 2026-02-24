@@ -103,10 +103,10 @@ def auditar_base_de_datos():
 with st.sidebar:
     st.title("🏢 Valle Mart")
     
-    st.subheader("Navegación")
+    st.subheader("Navegación") # TEMPORALMENTE FUERA ("📈 Reportes Financieros")
     menu = st.radio(
         "Seleccione un módulo:",
-        ["🏠 Inicio (Cartera)", "📈 Reportes Financieros", "📝 Ventas", "📊 Detalle de Crédito", "💰 Cobranza", "🎖️ Comisiones", "💸 Gastos", "📍 Ubicaciones", "👥 Directorio"]
+        ["🏠 Inicio (Cartera)", "📝 Ventas", "📊 Detalle de Crédito", "💰 Cobranza", "🎖️ Comisiones", "💸 Gastos", "📍 Ubicaciones", "👥 Directorio"]
     )
     
     st.divider()
@@ -162,3 +162,4 @@ elif menu == "📍 Ubicaciones":
 elif menu == "👥 Directorio":
     df_cl, df_vd = cargar_datos("clientes"), cargar_datos("vendedores")
     render_directorio(df_cl, df_vd, conn, URL_SHEET)
+
