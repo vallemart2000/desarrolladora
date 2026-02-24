@@ -12,6 +12,7 @@ from modulos.cobranza import render_cobranza
 from modulos.gastos import render_gastos
 from modulos.ubicaciones import render_ubicaciones
 from modulos.directorio import render_directorio
+from modulos.comisiones import render_comisiones
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="Valle Mart - Gestión Inmobiliaria", layout="wide", page_icon="🏢")
@@ -35,11 +36,9 @@ def cargar_datos(pestana):
         
         if df is None or df.empty:
             if pestana == "ubicaciones":
-                # Cambiamos 'comision' por 'enganche_req'
                 return pd.DataFrame(columns=["id_lote", "ubicacion", "manzana", "lote", "fase", "precio", "enganche_req", "estatus"])
             
             if pestana == "ventas":
-                # Estructura robusta para soportar Apartados y Ventas
                 return pd.DataFrame(columns=[
                     "id_venta", "fecha_registro", "fecha_contrato", "inicio_mensualidades", 
                     "ubicacion", "cliente", "vendedor", "precio_total", 
@@ -48,7 +47,6 @@ def cargar_datos(pestana):
                 ])
             
             if pestana == "pagos":
-                # Estandarizamos columnas de pagos
                 return pd.DataFrame(columns=["id_pago", "fecha", "ubicacion", "cliente", "monto", "metodo", "folio", "comentarios"])
             
             if pestana == "clientes":
@@ -56,6 +54,9 @@ def cargar_datos(pestana):
             
             if pestana == "vendedores":
                 return pd.DataFrame(columns=["id_vendedor", "nombre", "telefono", "comision_base"])
+
+            if pestana == "pagos_comisiones": # <--- PARCHE PARA NUEVA TABLA
+                return pd.DataFrame(columns=["vendedor", "monto", "fecha", "nota"])
                 
             return pd.DataFrame()
             
@@ -67,13 +68,13 @@ def cargar_datos(pestana):
 def auditar_base_de_datos():
     st.subheader("🔍 Auditoría de Estructura")
     
-    # Definimos lo que el sistema espera
     estructura_ideal = {
         "ubicaciones": ["id_lote", "ubicacion", "manzana", "lote", "fase", "precio", "enganche_req", "estatus"],
         "ventas": ["id_venta", "fecha_registro", "fecha_contrato", "inicio_mensualidades", "ubicacion", "cliente", "vendedor", "precio_total", "enganche_pagado", "enganche_requerido", "plazo_meses", "mensualidad", "estatus_pago", "comentarios"],
         "pagos": ["id_pago", "fecha", "ubicacion", "cliente", "monto", "metodo", "folio", "comentarios"],
         "clientes": ["id_cliente", "nombre", "telefono", "correo"],
-        "vendedores": ["id_vendedor", "nombre", "telefono", "comision_base"]
+        "vendedores": ["id_vendedor", "nombre", "telefono", "comision_base"],
+        "pagos_comisiones": ["vendedor", "monto", "fecha", "nota"]
     }
     
     errores = 0
@@ -81,8 +82,6 @@ def auditar_base_de_datos():
         try:
             df_real = conn.read(spreadsheet=URL_SHEET, worksheet=pestana)
             columnas_reales = df_real.columns.tolist()
-            
-            # Buscamos si falta alguna
             faltantes = [col for col in columnas_esperadas if col not in columnas_reales]
             
             if faltantes:
@@ -98,7 +97,7 @@ def auditar_base_de_datos():
     if errores == 0:
         st.info("💡 Tu base de datos está 100% sincronizada con el código.")
     else:
-        st.error(f"Se encontraron {errores} problemas de estructura. Por favor, revisa tu Google Sheets.")
+        st.error(f"Se encontraron {errores} problemas de estructura.")
 
 # --- BARRA LATERAL (SIDEBAR) ---
 with st.sidebar:
@@ -107,17 +106,15 @@ with st.sidebar:
     st.subheader("Navegación")
     menu = st.radio(
         "Seleccione un módulo:",
-        ["🏠 Inicio (Cartera)", "📈 Reportes Financieros", "📝 Ventas", "📊 Detalle de Crédito", "💰 Cobranza", "💸 Gastos", "📍 Ubicaciones", "👥 Directorio"]
+        ["🏠 Inicio (Cartera)", "📈 Reportes Financieros", "📝 Ventas", "📊 Detalle de Crédito", "💰 Cobranza", "🎖️ Comisiones", "💸 Gastos", "📍 Ubicaciones", "👥 Directorio"]
     )
     
     st.divider()
 
-    # Botón de actualización normal
     if st.button("🔄 Actualizar Información", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
-    # --- ESTE ES EL BLOQUE QUE FALTA: ---
     with st.expander("🛠️ Herramientas de Sistema"):
         if st.button("🔍 Auditar Columnas"):
             auditar_base_de_datos()
@@ -129,9 +126,7 @@ with st.sidebar:
     st.info(f"Última Sincronización: {ahora}")
 
 # --- RENDERIZADO DE MÓDULOS ---
-
 if menu == "🏠 Inicio (Cartera)":
-    # Corregido: Cargamos 'clientes' en lugar de 'directorio'
     df_v, df_p, df_cl = cargar_datos("ventas"), cargar_datos("pagos"), cargar_datos("clientes")
     render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda)
 
@@ -140,12 +135,7 @@ elif menu == "📈 Reportes Financieros":
     render_reportes(df_v, df_p, df_g, fmt_moneda)
 
 elif menu == "📝 Ventas":
-    df_v = cargar_datos("ventas")
-    df_u = cargar_datos("ubicaciones")
-    df_cl = cargar_datos("clientes")
-    df_vd = cargar_datos("vendedores")
-    df_p = cargar_datos("pagos")
-    # Llamada actualizada con df_p para soportar el archivado de pagos
+    df_v, df_u, df_cl, df_vd, df_p = cargar_datos("ventas"), cargar_datos("ubicaciones"), cargar_datos("clientes"), cargar_datos("vendedores"), cargar_datos("pagos")
     render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda)
 
 elif menu == "📊 Detalle de Crédito":
@@ -154,8 +144,12 @@ elif menu == "📊 Detalle de Crédito":
 
 elif menu == "💰 Cobranza":
     df_v, df_p = cargar_datos("ventas"), cargar_datos("pagos")
-    # Pasamos cargar_datos para que cobranza pueda actualizar 'ubicaciones' al formalizar
     render_cobranza(df_v, df_p, conn, URL_SHEET, fmt_moneda, cargar_datos)
+
+elif menu == "🎖️ Comisiones":
+    df_v = cargar_datos("ventas")
+    df_p_com = cargar_datos("pagos_comisiones")
+    render_comisiones(df_v, df_p_com, conn, URL_SHEET, fmt_moneda)
 
 elif menu == "💸 Gastos":
     df_g = cargar_datos("gastos")
@@ -166,7 +160,5 @@ elif menu == "📍 Ubicaciones":
     render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos)
 
 elif menu == "👥 Directorio":
-    df_cl = cargar_datos("clientes")
-    df_vd = cargar_datos("vendedores")
+    df_cl, df_vd = cargar_datos("clientes"), cargar_datos("vendedores")
     render_directorio(df_cl, df_vd, conn, URL_SHEET)
-
