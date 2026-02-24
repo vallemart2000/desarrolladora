@@ -80,7 +80,7 @@ with st.sidebar:
 # Pasamos 'conn' y 'URL_SHEET' a los módulos que necesitan guardar datos o autorreparar columnas
 
 if menu == "🏠 Inicio (Cartera)":
-    df_v, df_p, df_cl = cargar_datos("ventas"), cargar_datos("pagos"), cargar_datos("clientes")
+    df_v, df_p, df_cl = cargar_datos("ventas"), cargar_datos("pagos"), cargar_datos("directorio")
     # Agregamos parámetros para que el inicio pueda reparar columnas si faltan
     render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda)
 
@@ -89,7 +89,7 @@ elif menu == "📈 Reportes Financieros":
     render_reportes(df_v, df_p, df_g, fmt_moneda)
 
 elif menu == "📝 Ventas":
-    df_v, df_u, df_cl, df_vd = cargar_datos("ventas"), cargar_datos("ubicaciones"), cargar_datos("clientes"), cargar_datos("vendedores")
+    df_v, df_u, df_cl, df_vd = cargar_datos("ventas"), cargar_datos("ubicaciones"), cargar_datos("directorio"), cargar_datos("vendedores")
     render_ventas(df_v, df_u, df_cl, df_vd, conn, URL_SHEET, fmt_moneda)
 
 elif menu == "📊 Detalle de Crédito":
