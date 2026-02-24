@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import urllib.parse
+import re
 
 def verificar_y_reparar_columnas(df, columnas_necesarias, worksheet_name, conn, URL_SHEET):
     if df is None or (isinstance(df, pd.DataFrame) and df.empty and len(df.columns) == 0):
@@ -74,18 +75,28 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
 
     df_cartera[['dias_atraso', 'pago_corriente']] = df_cartera.apply(calcular_detalles, axis=1)
 
-    # --- 4. CONTACTO ---
+    # --- 4. CONTACTO (Lógica de Teléfono Corregida) ---
     def link_contacto(row, tipo):
         try:
             cl_info = df_cl[df_cl['nombre'] == row['cliente']].iloc[0]
             if tipo == "WA":
-                tel = str(cl_info['telefono']).strip()
-                msg = f"Hola {row['cliente']}, tu lote {row['ubicacion']} tiene {row['dias_atraso']} días de atraso. Saldo: {fmt_moneda(row['pago_corriente'])}."
-                return f"https://wa.me/{tel}?text={urllib.parse.quote(msg)}"
+                # Limpiamos el teléfono de espacios, guiones o paréntesis
+                tel_sucio = str(cl_info['telefono'])
+                tel_limpio = re.sub(r'\D', '', tel_sucio) # Deja solo números
+                
+                # Si el número tiene 10 dígitos, le falta el código de país (México = 52)
+                if len(tel_limpio) == 10:
+                    tel_final = "52" + tel_limpio
+                else:
+                    tel_final = tel_limpio
+                
+                msg = f"Hola {row['cliente']}, tu lote {row['ubicacion']} tiene {row['dias_atraso']} días de atraso. El pago para estar al corriente es de {fmt_moneda(row['pago_corriente'])}."
+                return f"https://wa.me/{tel_final}?text={urllib.parse.quote(msg)}"
             else:
                 mail = cl_info['correo']
                 return f"mailto:{mail}?subject=Aviso Lote {row['ubicacion']}&body=Atraso de {row['dias_atraso']} días."
-        except: return None
+        except: 
+            return None
 
     df_cartera['WhatsApp'] = df_cartera.apply(lambda r: link_contacto(r, "WA"), axis=1)
     df_cartera['Correo'] = df_cartera.apply(lambda r: link_contacto(r, "Mail"), axis=1)
@@ -104,7 +115,6 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
         df_mostrar = df_cartera.copy()
 
     if not df_mostrar.empty:
-        # Renombrar para que coincidan EXACTAMENTE con las columnas solicitadas
         df_mostrar = df_mostrar.rename(columns={
             "ubicacion": "Ubicación",
             "cliente": "Cliente",
@@ -112,7 +122,6 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
             "pago_corriente": "Pago para estar al Corriente"
         })
         
-        # Aseguramos que solo usamos columnas que SI existen
         cols_finales = ["Estatus", "Ubicación", "Cliente", "Días de Atraso", "Pago para estar al Corriente", "WhatsApp", "Correo"]
         
         st.dataframe(
