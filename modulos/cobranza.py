@@ -6,7 +6,7 @@ from dateutil.relativedelta import relativedelta
 def render_cobranza(df_v, df_p, conn, URL_SHEET, fmt_moneda, cargar_datos):
     st.title("💰 Gestión de Cobranza")
     
-    tab_pago, tab_historial = st.tabs(["💵 Registrar Nuevo Pago", "📋 Historial y Edición"])
+    tab_pago, tab_historial = st.tabs(["💵 Registrar Nuevo Pago", "📋 Historial Completo de Ingresos"])
 
     # Necesitamos df_u para actualizar el estatus de la ubicación físicamente
     df_u = cargar_datos("ubicaciones")
@@ -24,31 +24,26 @@ def render_cobranza(df_v, df_p, conn, URL_SHEET, fmt_moneda, cargar_datos):
                 v = df_v[df_v["ubicacion"] == ubi_sel].iloc[0]
                 
                 # --- LÓGICA DE SALDOS ---
-                # 1. Sumar lo que ya ha pagado (incluyendo el enganche inicial registrado en la venta)
                 pagos_anteriores = df_p[df_p["ubicacion"] == ubi_sel]["monto"].sum() if not df_p.empty else 0
                 total_acumulado = float(v.get('enganche_pagado', 0)) + pagos_anteriores
                 eng_req = float(v.get('enganche_requerido', 0))
                 
-                # Determinar si es Apartado o Contrato Activo
                 es_apartado = v["estatus_pago"] == "Pendiente"
 
                 if es_apartado:
                     faltante_eng = max(0.0, eng_req - total_acumulado)
-                    st.warning(f"⚠️ **ESTADO: APARTADO**. Faltan {fmt_moneda(faltante_eng)} para completar el enganche y formalizar contrato.")
+                    st.warning(f"⚠️ **ESTADO: APARTADO**. Faltan $ {faltante_eng:,.2f} para completar el enganche.")
                     monto_sugerido = faltante_eng if faltante_eng > 0 else 0.0
                 else:
-                    # Lógica de mensualidades vencidas para contratos activos
                     f_ini = pd.to_datetime(v['inicio_mensualidades'])
                     hoy = datetime.now()
                     meses_transcurridos = (hoy.year - f_ini.year) * 12 + (hoy.month - f_ini.month)
-                    meses_a_cobrar = max(0, meses_transcurridos + 1) # +1 para incluir el mes corriente
-                    
+                    meses_a_cobrar = max(0, meses_transcurridos + 1)
                     deuda_esperada = meses_a_cobrar * float(v['mensualidad'])
-                    # Restamos pagos que NO son del enganche (esto es un cálculo simplificado)
                     s_vencido = max(0.0, deuda_esperada - pagos_anteriores)
                     
                     if s_vencido > 0:
-                        st.error(f"🔴 Atraso en Mensualidades: {fmt_moneda(s_vencido)}")
+                        st.error(f"🔴 Atraso en Mensualidades: $ {s_vencido:,.2f}")
                     else:
                         st.success(f"🟢 Al corriente.")
                     monto_sugerido = float(v['mensualidad'])
@@ -63,7 +58,6 @@ def render_cobranza(df_v, df_p, conn, URL_SHEET, fmt_moneda, cargar_datos):
                     f_com = st.text_area("Notas del pago")
                     
                     if st.form_submit_button("✅ REGISTRAR PAGO", type="primary"):
-                        # 1. Crear Registro de Pago
                         nid = int(df_p["id_pago"].max() + 1) if not df_p.empty else 1
                         nuevo_pago = pd.DataFrame([{
                             "id_pago": nid, "fecha": f_fec.strftime('%Y-%m-%d'), 
@@ -73,54 +67,71 @@ def render_cobranza(df_v, df_p, conn, URL_SHEET, fmt_moneda, cargar_datos):
                         
                         df_p = pd.concat([df_p, nuevo_pago], ignore_index=True)
                         
-                        # --- RETO: REVISAR PROMOCIÓN A CONTRATO ---
                         nuevo_total = total_acumulado + f_mon
                         if es_apartado and nuevo_total >= eng_req:
-                            # ¡PROMOCIÓN!
                             idx_vta = df_v[df_v["ubicacion"] == ubi_sel].index[0]
                             df_v.at[idx_vta, "estatus_pago"] = "Activo"
                             df_v.at[idx_vta, "fecha_contrato"] = f_fec.strftime('%Y-%m-%d')
-                            # Primera mensualidad al siguiente mes de completar el enganche
                             f_mens = (f_fec + relativedelta(months=1)).strftime('%Y-%m-%d')
                             df_v.at[idx_vta, "inicio_mensualidades"] = f_mens
-                            
-                            # Actualizar Ubicación a Vendido
                             df_u.loc[df_u["ubicacion"] == ubi_sel, "estatus"] = "Vendido"
                             
                             conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
                             st.balloons()
-                            st.success(f"🎊 ¡ENGANCHE COMPLETADO! El apartado se ha convertido en CONTRATO. Primera mensualidad: {f_mens}")
                         
-                        # Guardar cambios
                         conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=df_p)
                         conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=df_v)
-                        
                         st.success("Pago guardado correctamente.")
                         st.cache_data.clear(); st.rerun()
 
-    # --- PESTAÑA 2: HISTORIAL Y EDICIÓN (Se mantiene similar con ajustes visuales) ---
+    # --- PESTAÑA 2: HISTORIAL UNIFICADO ---
     with tab_historial:
-        st.subheader("Historial de Pagos")
-        if df_p.empty:
-            st.info("No hay pagos registrados.")
+        st.subheader("Historial Unificado de Ingresos")
+        
+        # 1. Extraer Enganches de la tabla Ventas
+        df_enganches = df_v[["fecha_registro", "ubicacion", "cliente", "enganche_pagado"]].copy()
+        df_enganches.columns = ["fecha", "ubicacion", "cliente", "monto"]
+        df_enganches["metodo"] = "Enganche Inicial"
+        df_enganches["folio"] = "S/F"
+        df_enganches["comentarios"] = "Pago inicial registrado en venta"
+
+        # 2. Combinar con la tabla Pagos
+        if not df_p.empty:
+            # Aseguramos que las columnas coincidan para el concat
+            df_abonos = df_p[["fecha", "ubicacion", "cliente", "monto", "metodo", "folio", "comentarios"]].copy()
+            df_total_ingresos = pd.concat([df_enganches, df_abonos], ignore_index=True)
         else:
-            # Filtro por ubicación para facilitar la edición
-            filtro_ubi = st.selectbox("Filtrar por ubicación:", ["Todos"] + df_v["ubicacion"].tolist())
-            df_mostrar = df_p if filtro_ubi == "Todos" else df_p[df_p["ubicacion"] == filtro_ubi]
-            
-            st.dataframe(
-                df_mostrar.drop(columns=["id_pago"], errors="ignore"),
-                column_config={
-                    "monto": st.column_config.NumberColumn("Monto", format="$ %.2f"),
-                    "fecha": "Fecha"
-                },
-                use_container_width=True,
-                hide_index=True
-            )
-            
-            # Botón para eliminar último pago si hubo error
-            if st.button("🗑️ Eliminar último pago registrado"):
-                if not df_p.empty:
-                    df_p = df_p.drop(df_p.index[-1])
-                    conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=df_p)
-                    st.warning("Último pago eliminado."); st.rerun()
+            df_total_ingresos = df_enganches
+
+        # 3. Ordenar por fecha (más reciente arriba)
+        df_total_ingresos["fecha"] = pd.to_datetime(df_total_ingresos["fecha"])
+        df_total_ingresos = df_total_ingresos.sort_values(by="fecha", ascending=False)
+
+        # 4. Mostrar métricas rápidas
+        c_m1, c_m2 = st.columns(2)
+        total_cash = df_total_ingresos["monto"].sum()
+        c_m1.metric("💰 Total Ingresos Acumulados", f"$ {total_cash:,.2f}")
+        c_m2.metric("🧾 Cantidad de Operaciones", len(df_total_ingresos))
+
+        # 5. Filtros
+        filtro_ubi = st.selectbox("Filtrar por ubicación:", ["Todos"] + df_v["ubicacion"].tolist(), key="filtro_hist_total")
+        
+        df_final = df_total_ingresos if filtro_ubi == "Todos" else df_total_ingresos[df_total_ingresos["ubicacion"] == filtro_ubi]
+
+        st.dataframe(
+            df_final,
+            column_config={
+                "monto": st.column_config.NumberColumn("Monto", format="$ %.2f"),
+                "fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"),
+                "metodo": "Tipo/Método",
+                "ubicacion": "Lote"
+            },
+            use_container_width=True,
+            hide_index=True
+        )
+        
+        if st.button("🗑️ Eliminar último ABONO registrado"):
+            if not df_p.empty:
+                df_p = df_p.drop(df_p.index[-1])
+                conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=df_p)
+                st.warning("Último abono eliminado."); st.cache_data.clear(); st.rerun()
