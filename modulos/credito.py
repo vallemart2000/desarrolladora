@@ -11,15 +11,17 @@ def render_detalle_credito(df_v, df_p, fmt_moneda):
         return
 
     # 1. SELECTOR DE CONTRATO
+    # Usamos fecha_contrato para el selector si existe
     opciones_vta = (df_v["ubicacion"] + " | " + df_v["cliente"]).tolist()
     seleccion = st.selectbox("🔍 Seleccione un Contrato:", opciones_vta)
     
     ubi_sel = seleccion.split(" | ")[0]
     v = df_v[df_v["ubicacion"] == ubi_sel].iloc[0]
     
-    # --- CÁLCULOS FINANCIEROS ---
+    # --- CÁLCULOS FINANCIEROS (Nombres de columnas actualizados) ---
     precio_total_vta = float(v['precio_total'])
-    enganche_vta = float(v['enganche'])
+    # Cambiado de 'enganche' a 'enganche_pagado'
+    enganche_vta = float(v['enganche_pagado']) 
     monto_a_financiar = precio_total_vta - enganche_vta
     
     # Suma de abonos registrados en la tabla de pagos
@@ -29,12 +31,16 @@ def render_detalle_credito(df_v, df_p, fmt_moneda):
     porcentaje_total = (total_pagado_acumulado / precio_total_vta) if precio_total_vta > 0 else 0
     porcentaje_total = min(1.0, porcentaje_total)
 
-    # Lógica de morosidad
+    # Lógica de morosidad con nuevas columnas
     mensualidad_pactada = float(v['mensualidad'])
-    fecha_contrato = pd.to_datetime(v['fecha'])
+    # Cambiado de 'fecha' a 'fecha_contrato'
+    # Usamos fecha_registro como respaldo si fecha_contrato está vacío
+    f_ref = v['fecha_contrato'] if pd.notnull(v['fecha_contrato']) else v['fecha_registro']
+    fecha_inicio = pd.to_datetime(f_ref)
+    
     hoy = datetime.now()
     
-    meses_transcurridos = (hoy.year - fecha_contrato.year) * 12 + (hoy.month - fecha_contrato.month)
+    meses_transcurridos = (hoy.year - fecha_inicio.year) * 12 + (hoy.month - fecha_inicio.month)
     meses_a_deber = max(0, min(meses_transcurridos, int(v['plazo_meses'])))
     deuda_esperada_a_hoy = meses_a_deber * mensualidad_pactada
     
@@ -52,11 +58,11 @@ def render_detalle_credito(df_v, df_p, fmt_moneda):
     with c1:
         st.write(f"**📍 Ubicación:** {v['ubicacion']}")
         st.write(f"**👤 Cliente:** {v['cliente']}")
-        st.write(f"**📅 Contrato:** {fecha_contrato.strftime('%d-%b-%Y')}")
+        st.write(f"**📅 Fecha Contrato:** {fecha_inicio.strftime('%d-%b-%Y')}")
     with c2:
         st.metric("Total Pagado", fmt_moneda(total_pagado_acumulado))
         st.write(f"**💰 Costo Total:** {fmt_moneda(precio_total_vta)}")
-        st.write(f"**📥 Enganche:** {fmt_moneda(enganche_vta)}")
+        st.write(f"**📥 Enganche Pagado:** {fmt_moneda(enganche_vta)}")
     with c3:
         st.metric("Saldo Vencido", fmt_moneda(saldo_vencido), 
                   delta=f"{int(num_atrasos)} meses" if num_atrasos >= 1 else "Al día", 
@@ -66,14 +72,17 @@ def render_detalle_credito(df_v, df_p, fmt_moneda):
     st.divider()
 
     # --- GENERACIÓN DE LA TABLA DE AMORTIZACIÓN ---
-    st.subheader("📅 Cronograma de Pagos")
+    st.subheader("📅 Cronograma de Pagos Estimado")
     
     datos_amort = []
     saldo_insoluto = monto_a_financiar
     acumulado_pagado = abonos_mensuales
 
+    # Usar inicio_mensualidades para el cronograma si existe, si no, fecha_inicio + 1 mes
+    f_primer_pago = pd.to_datetime(v['inicio_mensualidades']) if pd.notnull(v['inicio_mensualidades']) else fecha_inicio + relativedelta(months=1)
+
     for i in range(1, int(v['plazo_meses']) + 1):
-        fecha_pago = fecha_contrato + relativedelta(months=i)
+        fecha_pago = f_primer_pago + relativedelta(months=i-1)
         
         # Determinar estatus de la cuota
         if acumulado_pagado >= mensualidad_pactada:
@@ -114,10 +123,7 @@ def render_detalle_credito(df_v, df_p, fmt_moneda):
         "Monto de Cuota": "$ {:,.2f}",
         "Saldo Restante": "$ {:,.2f}",
         "No. Cuota": "{:,.0f}"
-    }).set_table_styles([
-        {'selector': 'th', 'props': [('text-align', 'center'), ('background-color', '#f0f2f6'), ('color', '#1f1f1f')]},
-        {'selector': 'td', 'props': [('text-align', 'center')]}
-    ])
+    })
 
     st.dataframe(
         df_amort_estilizado,
