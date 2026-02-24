@@ -18,10 +18,8 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
         else:
             f_lote = st.selectbox("📍 Seleccione Lote", ["--"] + lotes_libres, key="nv_lote")
             if f_lote != "--":
-                # Obtenemos datos del lote desde df_u
                 row_u = df_u[df_u["ubicacion"] == f_lote].iloc[0]
                 costo_base = float(row_u.get('precio', 0.0))
-                # Usamos la nueva columna enganche_req
                 eng_minimo = float(row_u.get('enganche_req', 0.0))
                 
                 st.info(f"💰 **Condiciones del Lote:** \n"
@@ -33,13 +31,13 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                     f_fec = c1.date_input("📅 Fecha de hoy", value=datetime.now())
                     
                     vendedores_list = ["-- SELECCIONAR --"] + (df_vd["nombre"].tolist() if not df_vd.empty else [])
-                    f_vende_sel = c1.selectbox("👔 Vendedor", vendedores_list)
-                    f_vende_nuevo = c2.text_input("🆕 Nuevo Vendedor")
+                    f_vende_sel = c1.selectbox("👔 Vendedor Registrado", vendedores_list)
+                    f_vende_nuevo = c2.text_input("🆕 Nombre de Vendedor Nuevo")
                     
                     st.markdown("---")
                     clientes_list = ["-- SELECCIONAR --"] + (df_cl["nombre"].tolist() if not df_cl.empty else [])
                     f_cli_sel = st.selectbox("👤 Cliente Registrado", clientes_list)
-                    f_cli_nuevo = st.text_input("🆕 Nuevo Cliente")
+                    f_cli_nuevo = st.text_input("🆕 Nombre de Cliente Nuevo")
                     
                     st.markdown("---")
                     cf1, cf2 = st.columns(2)
@@ -48,7 +46,6 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                     f_pla = cf2.number_input("🕒 Plazo (Meses)", min_value=1, value=12)
                     f_coment = st.text_area("📝 Comentarios")
 
-                    # --- LÓGICA DE VALIDACIÓN DE ENGANCHE ---
                     cumple_enganche = f_eng_hoy >= eng_minimo
                     
                     if cumple_enganche:
@@ -64,27 +61,34 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                         
                         if cliente_final == "-- SELECCIONAR --" or not cliente_final:
                             st.error("❌ Error: Falta el cliente.")
+                        elif vendedor_final == "-- SELECCIONAR --" or not vendedor_final:
+                            st.error("❌ Error: Falta el vendedor.")
                         elif not confirmar_vta:
                             st.error("❌ Debes marcar la casilla de confirmación.")
                         else:
-                            # 1. Registro de Cliente Nuevo si aplica
+                            # 1.1 Registro de Cliente Nuevo si aplica
                             if f_cli_nuevo:
                                 nid_c = int(df_cl["id_cliente"].max() + 1) if not df_cl.empty else 1001
                                 nuevo_cli = pd.DataFrame([{"id_cliente": nid_c, "nombre": f_cli_nuevo, "telefono": "", "correo": ""}])
                                 df_cl = pd.concat([df_cl, nuevo_cli], ignore_index=True)
                                 conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=df_cl)
+
+                            # 1.2 REGISTRO DE VENDEDOR NUEVO (LO QUE FALTABA)
+                            if f_vende_nuevo:
+                                nid_vd = int(df_vd["id_vendedor"].max() + 1) if not df_vd.empty else 501
+                                nuevo_vd = pd.DataFrame([{"id_vendedor": nid_vd, "nombre": f_vende_nuevo, "telefono": "", "comision_base": 0}])
+                                df_vd = pd.concat([df_vd, nuevo_vd], ignore_index=True)
+                                conn.update(spreadsheet=URL_SHEET, worksheet="vendedores", data=df_vd)
                             
-                            # 2. Definir estatus y fechas según el reto
+                            # 2. Definir estatus y fechas
                             if cumple_enganche:
                                 estatus_ubi = "Vendido"
                                 estatus_vta = "Activo"
-                                # Fecha de contrato hoy, mensualidades inician en 1 mes
                                 fecha_contrato = f_fec.strftime('%Y-%m-%d')
                                 fecha_1ra_mens = (f_fec + relativedelta(months=1)).strftime('%Y-%m-%d')
                             else:
                                 estatus_ubi = "Apartado"
                                 estatus_vta = "Pendiente"
-                                # No hay fecha de contrato ni mensualidades hasta que complete
                                 fecha_contrato = "PENDIENTE"
                                 fecha_1ra_mens = "AL COMPLETAR ENGANCHE"
 
@@ -120,7 +124,7 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                             st.success(f"✅ Registro exitoso como {estatus_ubi}")
                             st.cache_data.clear(); st.rerun()
 
-    # --- PESTAÑA 2: EDITOR Y ARCHIVO (Se mantiene tu lógica de archivado) ---
+    # --- PESTAÑA 2: EDITOR Y ARCHIVO ---
     with tab_editar:
         st.subheader("Modificar o Archivar Venta")
         if df_v.empty: st.info("No hay ventas.")
@@ -135,7 +139,6 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                 
                 with st.form("form_edit_arch"):
                     st.write(f"Gestionando: **{id_ubi_sel}**")
-                    # Nota: e_fec ahora apunta a fecha_registro
                     e_fec = st.date_input("Fecha Registro", value=pd.to_datetime(datos_v["fecha_registro"]))
                     e_tot = st.number_input("Precio ($)", value=float(datos_v["precio_total"]))
                     e_eng = st.number_input("Enganche Pagado ($)", value=float(datos_v.get("enganche_pagado", 0)))
@@ -159,7 +162,6 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                     if c_arch.form_submit_button("📦 ARCHIVAR Y REINICIAR"):
                         if not f_motivo: st.error("Escribe el motivo.")
                         else:
-                            # Lógica de archivado que ya teníamos
                             reg_arch = datos_v.to_frame().T
                             reg_arch["fecha_cancelacion"] = datetime.now().strftime('%Y-%m-%d')
                             reg_arch["motivo"] = f_motivo
@@ -168,12 +170,13 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                             except: df_arch_v = pd.DataFrame()
                             df_arch_v = pd.concat([df_arch_v, reg_arch], ignore_index=True)
 
-                            pagos_lote = df_p[df_p["lote"] == id_ubi_sel].copy()
+                            # Filtrar pagos asociados
+                            pagos_lote = df_p[df_p["ubicacion"] == id_ubi_sel].copy()
                             if not pagos_lote.empty:
                                 try: df_arch_p = conn.read(spreadsheet=URL_SHEET, worksheet="archivo_pagos")
                                 except: df_arch_p = pd.DataFrame()
                                 df_arch_p = pd.concat([df_arch_p, pagos_lote], ignore_index=True)
-                                df_p = df_p[df_p["lote"] != id_ubi_sel]
+                                df_p = df_p[df_p["ubicacion"] != id_ubi_sel]
                                 conn.update(spreadsheet=URL_SHEET, worksheet="archivo_pagos", data=df_arch_p)
                                 conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=df_p)
 
@@ -183,11 +186,10 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                             conn.update(spreadsheet=URL_SHEET, worksheet="archivo_ventas", data=df_arch_v)
                             conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=df_v)
                             conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
-                            st.success("Lote liberado."); st.cache_data.clear(); st.rerun()
+                            st.success("Lote liberado y venta archivada."); st.cache_data.clear(); st.rerun()
 
     # --- PESTAÑA 3: HISTORIAL ---
     with tab_lista:
         if not df_v.empty:
-            # Mostramos columnas relevantes para que el usuario vea si es apartado o activo
             cols_mostrar = ["id_venta", "fecha_registro", "fecha_contrato", "ubicacion", "cliente", "estatus_pago"]
             st.dataframe(df_v[cols_mostrar], use_container_width=True, hide_index=True)
