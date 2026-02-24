@@ -40,18 +40,21 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                     f_cli_nuevo = st.text_input("🆕 Nombre de Cliente Nuevo")
                     
                     st.markdown("---")
-                    cf1, cf2 = st.columns(2)
+                    cf1, cf2, cf3 = st.columns(3)
                     f_tot = cf1.number_input("Precio Final de Venta ($)", min_value=0.0, value=costo_base)
                     f_eng_hoy = cf2.number_input("Monto que entrega hoy ($)", min_value=0.0)
+                    # REINTEGRO DE CAMPO COMISIÓN
+                    f_comision = cf3.number_input("Comisión Acordada ($)", min_value=0.0, step=100.0)
+                    
                     f_pla = cf2.number_input("🕒 Plazo (Meses)", min_value=1, value=12)
                     f_coment = st.text_area("📝 Comentarios")
 
                     cumple_enganche = f_eng_hoy >= eng_minimo
                     
                     if cumple_enganche:
-                        st.success(f"✅ El monto cubre el enganche. Se generará **CONTRATO**.")
+                        st.success(f"✅ El monto cubre el enganche. Comisión se liberará para pago.")
                     else:
-                        st.warning(f"⚠️ El monto es menor a {fmt_moneda(eng_minimo)}. Se registrará como **APARTADO**.")
+                        st.warning(f"⚠️ El monto es menor a {fmt_moneda(eng_minimo)}. Comisión pendiente hasta completar enganche.")
 
                     confirmar_vta = st.checkbox("Confirmo que los datos son correctos.")
 
@@ -73,7 +76,7 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                                 df_cl = pd.concat([df_cl, nuevo_cli], ignore_index=True)
                                 conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=df_cl)
 
-                            # 1.2 REGISTRO DE VENDEDOR NUEVO (LO QUE FALTABA)
+                            # 1.2 Registro de Vendedor Nuevo si aplica
                             if f_vende_nuevo:
                                 nid_vd = int(df_vd["id_vendedor"].max() + 1) if not df_vd.empty else 501
                                 nuevo_vd = pd.DataFrame([{"id_vendedor": nid_vd, "nombre": f_vende_nuevo, "telefono": "", "comision_base": 0}])
@@ -107,6 +110,7 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                                 "precio_total": f_tot, 
                                 "enganche_pagado": f_eng_hoy, 
                                 "enganche_requerido": eng_minimo,
+                                "comision_venta": f_comision, # GUARDAMOS LA COMISION
                                 "plazo_meses": f_pla, 
                                 "mensualidad": m_calc, 
                                 "estatus_pago": estatus_vta,
@@ -121,7 +125,7 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                             conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=df_v)
                             conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
                             
-                            st.success(f"✅ Registro exitoso como {estatus_ubi}")
+                            st.success(f"✅ Registro exitoso como {estatus_ubi}. Comisión registrada: $ {f_comision:,.2f}")
                             st.cache_data.clear(); st.rerun()
 
     # --- PESTAÑA 2: EDITOR Y ARCHIVO ---
@@ -142,6 +146,7 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                     e_fec = st.date_input("Fecha Registro", value=pd.to_datetime(datos_v["fecha_registro"]))
                     e_tot = st.number_input("Precio ($)", value=float(datos_v["precio_total"]))
                     e_eng = st.number_input("Enganche Pagado ($)", value=float(datos_v.get("enganche_pagado", 0)))
+                    e_com = st.number_input("Comisión ($)", value=float(datos_v.get("comision_venta", 0)))
                     e_pla = st.number_input("Plazo", value=int(datos_v["plazo_meses"]))
                     
                     st.markdown("---")
@@ -154,6 +159,7 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                         df_v.at[idx_vta, "fecha_registro"] = e_fec.strftime('%Y-%m-%d')
                         df_v.at[idx_vta, "precio_total"] = e_tot
                         df_v.at[idx_vta, "enganche_pagado"] = e_eng
+                        df_v.at[idx_vta, "comision_venta"] = e_com
                         df_v.at[idx_vta, "plazo_meses"] = e_pla
                         df_v.at[idx_vta, "mensualidad"] = (e_tot - e_eng) / e_pla
                         conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=df_v)
@@ -170,7 +176,6 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                             except: df_arch_v = pd.DataFrame()
                             df_arch_v = pd.concat([df_arch_v, reg_arch], ignore_index=True)
 
-                            # Filtrar pagos asociados
                             pagos_lote = df_p[df_p["ubicacion"] == id_ubi_sel].copy()
                             if not pagos_lote.empty:
                                 try: df_arch_p = conn.read(spreadsheet=URL_SHEET, worksheet="archivo_pagos")
@@ -191,5 +196,13 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
     # --- PESTAÑA 3: HISTORIAL ---
     with tab_lista:
         if not df_v.empty:
-            cols_mostrar = ["id_venta", "fecha_registro", "fecha_contrato", "ubicacion", "cliente", "estatus_pago"]
-            st.dataframe(df_v[cols_mostrar], use_container_width=True, hide_index=True)
+            # Incluimos comisión en la vista
+            cols_mostrar = ["id_venta", "ubicacion", "cliente", "vendedor", "comision_venta", "estatus_pago"]
+            st.dataframe(
+                df_v[cols_mostrar], 
+                use_container_width=True, 
+                hide_index=True,
+                column_config={
+                    "comision_venta": st.column_config.NumberColumn("Comisión ($)", format="$ %.2f")
+                }
+            )
