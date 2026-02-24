@@ -11,7 +11,7 @@ from modulos.credito import render_detalle_credito
 from modulos.cobranza import render_cobranza
 from modulos.gastos import render_gastos
 from modulos.ubicaciones import render_ubicaciones
-from modulos.directorio import render_clientes
+from modulos.directorio import render_directorio
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="Valle Mart - Gestión Inmobiliaria", layout="wide", page_icon="🏢")
@@ -110,5 +110,6 @@ elif menu == "📍 Ubicaciones":
 
 elif menu == "👥 Clientes":
     df_cl = cargar_datos("clientes")
-    render_clientes(df_cl, conn, URL_SHEET, cargar_datos)
+    render_directorio(df_cl, conn, URL_SHEET, cargar_datos)
+
 
