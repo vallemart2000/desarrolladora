@@ -4,7 +4,6 @@ from datetime import datetime
 import urllib.parse
 
 def verificar_y_reparar_columnas(df, columnas_necesarias, worksheet_name, conn, URL_SHEET):
-    """Sincroniza la estructura de la base de datos si faltan columnas."""
     if df is None or (isinstance(df, pd.DataFrame) and df.empty and len(df.columns) == 0):
         df = pd.DataFrame(columns=columnas_necesarias.keys())
     
@@ -33,7 +32,7 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
     }
     df_v = verificar_y_reparar_columnas(df_v, cols_v, "ventas", conn, URL_SHEET)
 
-    # --- 2. MÉTRICAS RÁPIDAS ---
+    # --- 2. MÉTRICAS ---
     c1, c2, c3, c4 = st.columns(4)
     total_recaudado = (df_v["enganche_pagado"].sum() + df_p["monto"].sum()) if not df_p.empty else df_v["enganche_pagado"].sum()
     
@@ -44,12 +43,11 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
 
     st.markdown("---")
 
-    # --- 3. PROCESAMIENTO DE COBRANZA ---
+    # --- 3. LÓGICA DE COBRANZA ---
     if df_v.empty:
-        st.info("No hay datos de ventas registradas.")
+        st.info("No hay datos de ventas.")
         return
 
-    # Obtener último pago
     if not df_p.empty:
         df_p_clean = df_p.copy()
         df_p_clean['fecha'] = pd.to_datetime(df_p_clean['fecha'], errors='coerce')
@@ -58,98 +56,73 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
     else:
         ultimo_pago = pd.DataFrame(columns=['ubicacion', 'fecha_ultimo_pago'])
 
-    # Unir Datos
     df_cartera = df_v[df_v["estatus_pago"] == "Activo"].copy()
     df_cartera = df_cartera.merge(ultimo_pago, on='ubicacion', how='left')
     
     hoy = datetime.now()
     
-    def calcular_detalles_cobro(row):
+    def calcular_detalles(row):
         try:
-            # Si no hay pago, la referencia es el inicio de mensualidades
             fecha_ref = pd.to_datetime(row['fecha_ultimo_pago']) if pd.notnull(row['fecha_ultimo_pago']) else pd.to_datetime(row['inicio_mensualidades'])
             dias = max(0, (hoy - fecha_ref).days)
-            
             mensualidad = float(row['mensualidad'])
-            # Lógica de cobro: si tiene más de 30 días, calculamos meses. Si no, sugerimos 1 mensualidad.
             meses_atraso = max(1, dias // 30) if dias > 25 else 0
             pago_sugerido = meses_atraso * mensualidad if dias > 25 else 0.0
-            
             return pd.Series([dias, pago_sugerido])
         except:
             return pd.Series([0, 0.0])
 
-    df_cartera[['dias_atraso', 'pago_corriente']] = df_cartera.apply(calcular_detalles_cobro, axis=1)
+    df_cartera[['dias_atraso', 'pago_corriente']] = df_cartera.apply(calcular_detalles, axis=1)
 
-    # --- 4. GENERACIÓN DE LINKS DE CONTACTO ---
-    def generar_contacto(row, tipo):
+    # --- 4. CONTACTO ---
+    def link_contacto(row, tipo):
         try:
-            datos_cl = df_cl[df_cl['nombre'] == row['cliente']].iloc[0]
+            cl_info = df_cl[df_cl['nombre'] == row['cliente']].iloc[0]
             if tipo == "WA":
-                tel = datos_cl['telefono']
-                if not tel or str(tel) == 'nan': return None
-                msg = (f"Hola {row['cliente']}, te saludamos de Valle Mart. "
-                       f"Notamos un atraso de {row['dias_atraso']} días en tu lote {row['ubicacion']}. "
-                       f"Monto para regularizar: {fmt_moneda(row['pago_corriente'])}. ¿Cómo podemos apoyarte?")
-                return f"https://wa.me/{str(tel).strip()}?text={urllib.parse.quote(msg)}"
+                tel = str(cl_info['telefono']).strip()
+                msg = f"Hola {row['cliente']}, tu lote {row['ubicacion']} tiene {row['dias_atraso']} días de atraso. Saldo: {fmt_moneda(row['pago_corriente'])}."
+                return f"https://wa.me/{tel}?text={urllib.parse.quote(msg)}"
             else:
-                mail = datos_cl['correo']
-                if not mail or str(mail) == 'nan': return None
-                asunto = f"Aviso de Cobranza - Lote {row['ubicacion']}"
-                cuerpo = (f"Estimado {row['cliente']},\n\nLe informamos que su cuenta presenta "
-                          f"{row['dias_atraso']} días de atraso. El monto sugerido para estar "
-                          f"al corriente es de {fmt_moneda(row['pago_corriente'])}.")
-                return f"mailto:{mail}?subject={urllib.parse.quote(asunto)}&body={urllib.parse.quote(cuerpo)}"
+                mail = cl_info['correo']
+                return f"mailto:{mail}?subject=Aviso Lote {row['ubicacion']}&body=Atraso de {row['dias_atraso']} días."
         except: return None
 
-    df_cartera['WhatsApp'] = df_cartera.apply(lambda r: generar_contacto(r, "WA"), axis=1)
-    df_cartera['Correo'] = df_cartera.apply(lambda r: generar_contacto(r, "Mail"), axis=1)
+    df_cartera['WhatsApp'] = df_cartera.apply(lambda r: link_contacto(r, "WA"), axis=1)
+    df_cartera['Correo'] = df_cartera.apply(lambda r: link_contacto(r, "Mail"), axis=1)
 
-    # --- 5. SEMÁFORO (25 y 75 días) ---
     df_cartera['Estatus'] = df_cartera['dias_atraso'].apply(
         lambda x: "🔴 CRÍTICO (+75d)" if x > 75 else ("🟡 PREVENTIVO (+25d)" if x > 25 else "🟢 AL CORRIENTE")
     )
 
-    # --- 6. TABLA PRINCIPAL ---
+    # --- 5. TABLA ---
     st.subheader("📋 Control de Cobranza y Contacto")
-    
-    # Interruptor encendido por defecto
     solo_atrasados = st.toggle("Ocultar clientes al corriente", value=True)
     
-    df_mostrar = df_cartera[df_cartera['dias_atraso'] > 25].copy() if solo_atrasados else df_cartera.copy()
-
-    if df_mostrar.empty:
-        st.success("✨ No hay cuentas pendientes de cobro con los filtros actuales.")
+    if solo_atrasados:
+        df_mostrar = df_cartera[df_cartera['dias_atraso'] > 25].copy()
     else:
-        # Columnas solicitadas: Estatus, Ubicación, Cliente, Días de Atraso, Pago para estar al Corriente, Enviar WA, Enviar Correo
-        df_mostrar = df_mostrar.rename(columns={"ubicacion": "Ubicación", "dias_atraso": "Días de Atraso", "pago_corriente": "Pago para estar al Corriente"})
+        df_mostrar = df_cartera.copy()
+
+    if not df_mostrar.empty:
+        # Renombrar para que coincidan EXACTAMENTE con las columnas solicitadas
+        df_mostrar = df_mostrar.rename(columns={
+            "ubicacion": "Ubicación",
+            "cliente": "Cliente",
+            "dias_atraso": "Días de Atraso",
+            "pago_corriente": "Pago para estar al Corriente"
+        })
+        
+        # Aseguramos que solo usamos columnas que SI existen
         cols_finales = ["Estatus", "Ubicación", "Cliente", "Días de Atraso", "Pago para estar al Corriente", "WhatsApp", "Correo"]
         
         st.dataframe(
-            df_mostrar[cols_finales].sort_values("Días de Atraso", ascending=False),
+            df_mostrar[cols_finales],
             column_config={
                 "Pago para estar al Corriente": st.column_config.NumberColumn(format="$ %.2f"),
-                "Días de Atraso": st.column_config.NumberColumn(format="%d días"),
                 "WhatsApp": st.column_config.LinkColumn("📲 Enviar WA", display_text="WhatsApp"),
                 "Correo": st.column_config.LinkColumn("📧 Enviar Correo", display_text="Email")
             },
-            use_container_width=True,
-            hide_index=True
+            use_container_width=True, hide_index=True
         )
-
-    # --- 7. PRÓXIMOS VENCIMIENTOS ---
-    st.markdown("---")
-    with st.expander("📅 Ver próximos vencimientos (Próximos 7 días)"):
-        # Calculamos quiénes cumplen su ciclo mensual en la próxima semana
-        # Basado en el día del mes de 'inicio_mensualidades'
-        dia_hoy = hoy.day
-        df_vencen = df_cartera.copy()
-        df_vencen['dia_pago'] = pd.to_datetime(df_vencen['inicio_mensualidades']).dt.day
-        
-        # Filtramos los que pagan entre hoy y hoy + 7 días
-        prox_7 = df_vencen[(df_vencen['dia_pago'] >= dia_hoy) & (df_vencen['dia_pago'] <= dia_hoy + 7)]
-        
-        if prox_7.empty:
-            st.info("No hay vencimientos programados para los próximos 7 días.")
-        else:
-            st.table(prox_7[["ubicacion", "cliente", "mensualidad"]].rename(columns={"ubicacion":"Lote", "mensualidad":"Monto Mensual"}))
+    else:
+        st.success("🎉 Todo al corriente.")
