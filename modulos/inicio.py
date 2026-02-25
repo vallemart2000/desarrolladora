@@ -62,21 +62,15 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
         try:
             f_ini = pd.to_datetime(row['inicio_mensualidades'])
             if pd.isnull(f_ini): f_ini = hoy
-            
             diff = (hoy.year - f_ini.year) * 12 + (hoy.month - f_ini.month)
             if hoy.day < f_ini.day: diff -= 1
-            
             mensualidad = float(row['mensualidad'])
             deuda_teorica = max(0, diff) * mensualidad
             pagado = float(row['total_pagado_cuotas'])
-            
             saldo = max(0.0, deuda_teorica - pagado)
-            
-            # Días de atraso basados en el último peso cubierto
             cubiertos = pagado / mensualidad if mensualidad > 0 else 0
             vence_pendiente = f_ini + pd.DateOffset(months=int(cubiertos))
             dias = (hoy - vence_pendiente).days if saldo > 0 else 0
-            
             return pd.Series([max(0, dias), saldo])
         except:
             return pd.Series([0, 0.0])
@@ -93,30 +87,27 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
     df_viz = df_cartera.copy()
     if solo_mora:
         df_viz = df_viz[df_viz['monto_vencido'] > 0]
-    
     if busqueda:
-        df_viz = df_viz[
-            df_viz['cliente'].astype(str).str.contains(busqueda, case=False) | 
-            df_viz['ubicacion'].astype(str).str.contains(busqueda, case=False)
-        ]
+        df_viz = df_viz[df_viz['cliente'].astype(str).str.contains(busqueda, case=False) | 
+                        df_viz['ubicacion'].astype(str).str.contains(busqueda, case=False)]
 
     if not df_viz.empty:
         df_viz = df_viz.sort_values("atraso", ascending=False)
         
-        # Aplicamos el formato con comas antes de mostrar
-        df_viz["Saldo Vencido"] = df_viz["monto_vencido"].apply(fmt_moneda)
+        # Formateamos el Saldo Vencido a String con comas
+        df_viz["Saldo Formateado"] = df_viz["monto_vencido"].apply(fmt_moneda)
         df_viz['Estatus'] = df_viz['atraso'].apply(
             lambda x: "🔴 CRÍTICO" if x > 60 else ("🟡 MORA" if x > 5 else "🟢 AL CORRIENTE")
         )
 
-        # Usamos una configuración de columnas más simple para evitar el TypeError
+        # CONFIGURACIÓN SIN 'ALIGNMENT' PARA EVITAR EL ERROR
         st.dataframe(
-            df_viz[["Estatus", "ubicacion", "cliente", "atraso", "Saldo Vencido"]],
+            df_viz[["Estatus", "ubicacion", "cliente", "atraso", "Saldo Formateado"]],
             column_config={
                 "ubicacion": "Lote",
                 "cliente": "Cliente",
                 "atraso": st.column_config.NumberColumn("Días de Atraso"),
-                "Saldo Vencido": st.column_config.TextColumn("Saldo Vencido", alignment="right")
+                "Saldo Formateado": st.column_config.TextColumn("Saldo Vencido") 
             },
             use_container_width=True, 
             hide_index=True
