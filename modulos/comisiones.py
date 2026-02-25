@@ -69,14 +69,20 @@ def render_comisiones(df_v, df_p_com, conn, URL_SHEET, fmt_moneda):
     # --- 4. VISUALIZACIÓN DE CARTERA POR VENDEDOR ---
     st.subheader("📊 Estado por Vendedor")
     
-    # Formatear tabla para visualización
-    df_vis = resumen_final.copy()
+    # Aplicamos el criterio de Pandas Style para asegurar comas y signo $
+    df_resumen_estilado = resumen_final.style.format({
+        "Total Devengado": "$ {:,.2f}",
+        "Total Pagado": "$ {:,.2f}",
+        "Saldo Pendiente": "$ {:,.2f}"
+    })
+
     st.dataframe(
-        df_vis,
+        df_resumen_estilado,
         column_config={
-            "Total Devengado": st.column_config.NumberColumn(format="$ %.2f"),
-            "Total Pagado": st.column_config.NumberColumn(format="$ %.2f"),
-            "Saldo Pendiente": st.column_config.NumberColumn(format="$ %.2f")
+            "Vendedor": "Vendedor",
+            "Total Devengado": "Devengado",
+            "Total Pagado": "Pagado",
+            "Saldo Pendiente": "Saldo Pendiente"
         },
         use_container_width=True,
         hide_index=True
@@ -88,24 +94,44 @@ def render_comisiones(df_v, df_p_com, conn, URL_SHEET, fmt_moneda):
     with tab1:
         st.write("Ventas totales y comisión generada por contrato:")
         df_ventas_detalle = df_v[['vendedor', 'cliente', 'ubicacion', 'precio_total', 'comision_total']].copy()
+        
+        # Aplicamos estilo al ranking
+        df_ranking_estilado = df_ventas_detalle.style.format({
+            "precio_total": "$ {:,.2f}",
+            "comision_total": "$ {:,.2f}"
+        })
+
         st.dataframe(
-            df_ventas_detalle.rename(columns={
-                "vendedor": "Vendedor", "cliente": "Cliente", 
-                "ubicacion": "Lote", "precio_total": "Venta", "comision_total": "Comisión"
-            }),
+            df_ranking_estilado,
             column_config={
-                "Venta": st.column_config.NumberColumn(format="$ %.2f"),
-                "Comisión": st.column_config.NumberColumn(format="$ %.2f")
+                "vendedor": "Vendedor", 
+                "cliente": "Cliente", 
+                "ubicacion": "Lote", 
+                "precio_total": "Venta ($)", 
+                "comision_total": "Comisión ($)"
             },
+            use_container_width=True,
             hide_index=True
         )
 
     with tab2:
         if not df_p_com.empty:
             st.write("Últimos pagos realizados:")
+            df_hist_pagos = df_p_com.sort_values(by="fecha", ascending=False).copy()
+            
+            # Aplicamos estilo al historial de pagos
+            df_hist_pagos_estilado = df_hist_pagos.style.format({
+                "monto": "$ {:,.2f}"
+            })
+
             st.dataframe(
-                df_p_com.sort_values(by="fecha", ascending=False),
-                column_config={"monto": st.column_config.NumberColumn(format="$ %.2f")},
+                df_hist_pagos_estilado,
+                column_config={
+                    "vendedor": "Vendedor",
+                    "monto": "Monto Pagado",
+                    "fecha": "Fecha de Pago",
+                    "nota": "Referencia"
+                },
                 use_container_width=True,
                 hide_index=True
             )
