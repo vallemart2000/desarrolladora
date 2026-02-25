@@ -115,7 +115,7 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
         # Formateamos el Saldo Vencido para mostrar comas
         df_viz["Saldo Vencido"] = df_viz["monto_vencido"].apply(fmt_moneda)
         df_viz['Estatus'] = df_viz['atraso'].apply(
-            lambda x: "🔴 CRÍTICO" if x > 60 else ("🟡 MORA" if x > 5 else "🟢 AL CORRIENTE")
+            lambda x: "🔴 CRÍTICO (+75)" if x > 75 else ("🟡 MORA (+25)" if x > 25 else "🟢 AL CORRIENTE")
         )
 
         st.dataframe(
