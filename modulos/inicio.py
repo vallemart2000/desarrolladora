@@ -118,10 +118,7 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
                                 df_mostrar['ubicacion'].astype(str).str.contains(busqueda, case=False)]
 
     if not df_mostrar.empty:
-        # Ordenamos por severidad de atraso
         df_mostrar = df_mostrar.sort_values("dias_atraso", ascending=False)
-        
-        # PRE-FORMATEO DE DATOS PARA LA TABLA (Asegura comas y formato $)
         df_viz = df_mostrar.copy()
         df_viz["Saldo Vencido"] = df_viz["pago_corriente"].apply(fmt_moneda)
         df_viz['Estatus'] = df_viz['dias_atraso'].apply(
@@ -134,6 +131,7 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
                 "ubicacion": "Lote",
                 "cliente": "Cliente",
                 "dias_atraso": "Días de Atraso",
+                "Saldo Vencido": st.column_config.TextColumn("Saldo Vencido", alignment="right"),
                 "WhatsApp": st.column_config.LinkColumn("📲 Enviar WA", display_text="Chat"),
                 "Correo": st.column_config.LinkColumn("📧 Enviar Mail", display_text="Email")
             },
