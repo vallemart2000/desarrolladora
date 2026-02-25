@@ -132,19 +132,24 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
                                 df_mostrar['ubicacion'].str.contains(busqueda, case=False)]
 
     if not df_mostrar.empty:
-        df_mostrar = df_mostrar.sort_values("dias_atraso", ascending=False)
-        
-        st.dataframe(
-            df_mostrar[["Estatus", "ubicacion", "cliente", "dias_atraso", "pago_corriente", "WhatsApp", "Correo"]],
-            column_config={
-                "ubicacion": "Lote",
-                "cliente": "Cliente",
-                "dias_atraso": "Días de Atraso",
-                "pago_corriente": st.column_config.NumberColumn("Saldo Vencido", format="$ %,.2f"),
-                "WhatsApp": st.column_config.LinkColumn("📲 Enviar Mensaje", display_text="WhatsApp"),
-                "Correo": st.column_config.LinkColumn("📧 Enviar Mail", display_text="Email")
-            },
-            use_container_width=True, hide_index=True
-        )
+    df_mostrar = df_mostrar.sort_values("dias_atraso", ascending=False)
+    df_viz = df_mostrar.copy()
+    df_viz["pago_corriente"] = df_viz["pago_corriente"].apply(fmt_moneda)
+    
+    df_viz['Estatus_Texto'] = df_viz['dias_atraso'].apply(
+        lambda x: "🔴 CRÍTICO" if x > 60 else ("🟡 MORA" if x > 5 else "🟢 AL CORRIENTE")
+    )
+
+    st.dataframe(
+        df_viz[["Estatus_Texto", "ubicacion", "cliente", "dias_atraso", "pago_corriente"]],
+        column_config={
+            "Estatus_Texto": "Estatus",
+            "ubicacion": "Lote",
+            "cliente": "Cliente",
+            "dias_atraso": "Días de Atraso",
+            "pago_corriente": "Saldo Vencido",
+        },
+        use_container_width=True, hide_index=True
+    )
     else:
         st.success("🎉 No se encontraron deudas pendientes con los filtros aplicados.")
