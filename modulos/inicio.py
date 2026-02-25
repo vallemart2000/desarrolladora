@@ -124,7 +124,7 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
                 "ubicacion": "Lote",
                 "cliente": "Cliente",
                 "atraso": st.column_config.NumberColumn("Días de Atraso"),
-                "Saldo Vencido": st.column_config.TextColumn("Saldo Vencido"),
+                "Saldo Vencido": st.column_config.NumberColumn("Saldo Vencido"),
                 "WhatsApp": st.column_config.LinkColumn("📲 WA", display_text="Chat"),
                 "Correo": st.column_config.LinkColumn("📧 Mail", display_text="Email")
             },
