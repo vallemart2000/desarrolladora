@@ -77,7 +77,25 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
 
     df_cartera[['atraso', 'monto_vencido']] = df_cartera.apply(calc_mora, axis=1)
 
-    # --- 4. TABLA DE COBRANZA ---
+    # --- 4. LÓGICA DE CONTACTO ---
+    def link_contacto(row, tipo):
+        try:
+            cl_info = df_cl[df_cl['nombre'] == row['cliente']].iloc[0]
+            if tipo == "WA":
+                tel_limpio = re.sub(r'\D', '', str(cl_info['telefono']))
+                tel_final = "52" + tel_limpio if len(tel_limpio) == 10 else tel_limpio
+                msg = (f"Hola {row['cliente']}, te saludamos de Valle Mart. Detectamos un saldo pendiente en tu lote "
+                       f"{row['ubicacion']} por {fmt_moneda(row['monto_vencido'])}. Contamos con {row['atraso']} días de atraso.")
+                return f"https://wa.me/{tel_final}?text={urllib.parse.quote(msg)}"
+            else:
+                mail = cl_info['correo']
+                return f"mailto:{mail}?subject=Estado de Cuenta - Lote {row['ubicacion']}"
+        except: return None
+
+    df_cartera['WhatsApp'] = df_cartera.apply(lambda r: link_contacto(r, "WA"), axis=1)
+    df_cartera['Correo'] = df_cartera.apply(lambda r: link_contacto(r, "Mail"), axis=1)
+
+    # --- 5. TABLA DE COBRANZA ---
     st.subheader("📋 Control de Cobranza y Contacto")
     
     cf1, cf2 = st.columns(2)
@@ -94,20 +112,21 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
     if not df_viz.empty:
         df_viz = df_viz.sort_values("atraso", ascending=False)
         
-        # Formateamos el Saldo Vencido a String con comas
-        df_viz["Saldo Formateado"] = df_viz["monto_vencido"].apply(fmt_moneda)
+        # Formateamos el Saldo Vencido para mostrar comas
+        df_viz["Saldo Vencido"] = df_viz["monto_vencido"].apply(fmt_moneda)
         df_viz['Estatus'] = df_viz['atraso'].apply(
             lambda x: "🔴 CRÍTICO" if x > 60 else ("🟡 MORA" if x > 5 else "🟢 AL CORRIENTE")
         )
 
-        # CONFIGURACIÓN SIN 'ALIGNMENT' PARA EVITAR EL ERROR
         st.dataframe(
-            df_viz[["Estatus", "ubicacion", "cliente", "atraso", "Saldo Formateado"]],
+            df_viz[["Estatus", "ubicacion", "cliente", "atraso", "Saldo Vencido", "WhatsApp", "Correo"]],
             column_config={
                 "ubicacion": "Lote",
                 "cliente": "Cliente",
                 "atraso": st.column_config.NumberColumn("Días de Atraso"),
-                "Saldo Formateado": st.column_config.TextColumn("Saldo Vencido") 
+                "Saldo Vencido": st.column_config.TextColumn("Saldo Vencido"),
+                "WhatsApp": st.column_config.LinkColumn("📲 WA", display_text="Chat"),
+                "Correo": st.column_config.LinkColumn("📧 Mail", display_text="Email")
             },
             use_container_width=True, 
             hide_index=True
