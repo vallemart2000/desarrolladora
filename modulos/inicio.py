@@ -140,7 +140,7 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
                 "ubicacion": "Lote",
                 "cliente": "Cliente",
                 "dias_atraso": "Días de Atraso",
-                "pago_corriente": st.column_config.NumberColumn("Saldo Vencido", format=",.2f"),
+                "pago_corriente": st.column_config.NumberColumn("Saldo Vencido", format="$ %,.2f"),
                 "WhatsApp": st.column_config.LinkColumn("📲 Enviar Mensaje", display_text="WhatsApp"),
                 "Correo": st.column_config.LinkColumn("📧 Enviar Mail", display_text="Email")
             },
