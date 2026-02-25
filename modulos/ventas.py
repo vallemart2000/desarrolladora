@@ -196,13 +196,28 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
     # --- PESTAÑA 3: HISTORIAL ---
     with tab_lista:
         if not df_v.empty:
-            # Incluimos comisión en la vista
+            st.subheader("📋 Historial de Operaciones")
+            
             cols_mostrar = ["id_venta", "ubicacion", "cliente", "vendedor", "comision_venta", "estatus_pago"]
+            df_historial = df_v[cols_mostrar].copy()
+
+            df_historial_estilado = df_historial.style.format({
+                "comision_venta": "$ {:,.2f}",
+                "id_venta": "{:.0f}"
+            })
+
             st.dataframe(
-                df_v[cols_mostrar], 
+                df_historial_estilado,
                 use_container_width=True, 
                 hide_index=True,
                 column_config={
-                    "comision_venta": st.column_config.NumberColumn("Comisión ($)", format="$ %.2f")
+                    "id_venta": "ID",
+                    "ubicacion": "Lote",
+                    "cliente": "Cliente",
+                    "vendedor": "Vendedor",
+                    "comision_venta": "Comisión",
+                    "estatus_pago": "Estatus"
                 }
             )
+        else:
+            st.info("No hay ventas registradas para mostrar.")
