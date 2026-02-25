@@ -113,7 +113,7 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
     df_cartera['Correo'] = df_cartera.apply(lambda r: link_contacto(r, "Mail"), axis=1)
 
     df_cartera['Estatus'] = df_cartera['dias_atraso'].apply(
-        lambda x: "🔴 CRÍTICO (+60d)" if x > 60 else ("🟡 MORA (+5d)" if x > 5 else "🟢 AL CORRIENTE")
+        lambda x: "🔴 CRÍTICO (+75d)" if x > 75 else ("🟡 MORA (+25d)" if x > 25 else "🟢 AL CORRIENTE")
     )
 
     # --- 5. TABLA DE COBRANZA ---
