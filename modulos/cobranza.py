@@ -97,39 +97,46 @@ def render_cobranza(df_v, df_p, conn, URL_SHEET, fmt_moneda, cargar_datos):
 
         # 2. Combinar con la tabla Pagos
         if not df_p.empty:
-            # Aseguramos que las columnas coincidan para el concat
             df_abonos = df_p[["fecha", "ubicacion", "cliente", "monto", "metodo", "folio", "comentarios"]].copy()
             df_total_ingresos = pd.concat([df_enganches, df_abonos], ignore_index=True)
         else:
             df_total_ingresos = df_enganches
 
-        # 3. Ordenar por fecha (más reciente arriba)
+        # 3. Ordenar por fecha
         df_total_ingresos["fecha"] = pd.to_datetime(df_total_ingresos["fecha"])
         df_total_ingresos = df_total_ingresos.sort_values(by="fecha", ascending=False)
 
-        # 4. Mostrar métricas rápidas
-        c_m1, c_m2 = st.columns(2)
+        # 4. Métricas rápidas
         total_cash = df_total_ingresos["monto"].sum()
+        c_m1, c_m2 = st.columns(2)
         c_m1.metric("💰 Total Ingresos Acumulados", f"$ {total_cash:,.2f}")
         c_m2.metric("🧾 Cantidad de Operaciones", len(df_total_ingresos))
 
         # 5. Filtros
         filtro_ubi = st.selectbox("Filtrar por ubicación:", ["Todos"] + df_v["ubicacion"].tolist(), key="filtro_hist_total")
-        
         df_final = df_total_ingresos if filtro_ubi == "Todos" else df_total_ingresos[df_total_ingresos["ubicacion"] == filtro_ubi]
 
+        df_final_estilado = df_final.style.format({
+            "monto": "$ {:,.2f}",
+            "fecha": lambda x: x.strftime('%d/%m/%Y')
+        })
+
         st.dataframe(
-            df_final,
+            df_final_estilado,
             column_config={
-                "monto": st.column_config.NumberColumn("Monto", format="$ %.2f"),
-                "fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"),
+                "fecha": "Fecha",
+                "ubicacion": "Lote",
+                "cliente": "Cliente",
+                "monto": "Monto",
                 "metodo": "Tipo/Método",
-                "ubicacion": "Lote"
+                "folio": "Folio",
+                "comentarios": "Comentarios"
             },
             use_container_width=True,
             hide_index=True
         )
         
+        st.divider()
         if st.button("🗑️ Eliminar último ABONO registrado"):
             if not df_p.empty:
                 df_p = df_p.drop(df_p.index[-1])
