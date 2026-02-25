@@ -34,10 +34,10 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
     df_v = verificar_y_reparar_columnas(df_v, cols_v, "ventas", conn, URL_SHEET)
 
     # --- 2. MÉTRICAS GENERALES ---
-    c1, c2, c3, c4 = st.columns(4)
     total_recaudado = (df_v["enganche_pagado"].sum() + df_p["monto"].sum()) if not df_p.empty else df_v["enganche_pagado"].sum()
     valor_cartera = df_v[df_v['estatus_pago'] == 'Activo']['precio_total'].sum()
     
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("💰 Ingresos Totales", fmt_moneda(total_recaudado))
     c2.metric("👥 Clientes Activos", df_v[df_v["estatus_pago"] == "Activo"].shape[0])
     c3.metric("📈 Valor Cartera", fmt_moneda(valor_cartera))
@@ -47,103 +47,79 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
 
     # --- 3. LÓGICA DE CARTERA VENCIDA ---
     if df_v.empty:
-        st.info("No hay datos de ventas.")
+        st.info("No hay datos de ventas registrados.")
         return
 
-    if not df_p.empty:
-        pagos_totales = df_p.groupby('ubicacion')['monto'].sum().reset_index()
-        pagos_totales.columns = ['ubicacion', 'total_abonado_mensualidades']
-    else:
-        pagos_totales = pd.DataFrame(columns=['ubicacion', 'total_abonado_mensualidades'])
+    pagos_resumen = df_p.groupby('ubicacion')['monto'].sum().reset_index() if not df_p.empty else pd.DataFrame(columns=['ubicacion', 'monto'])
+    pagos_resumen.columns = ['ubicacion', 'total_pagado_cuotas']
 
     df_cartera = df_v[df_v["estatus_pago"] == "Activo"].copy()
-    df_cartera = df_cartera.merge(pagos_totales, on='ubicacion', how='left').fillna(0)
+    df_cartera = df_cartera.merge(pagos_resumen, on='ubicacion', how='left').fillna(0)
     
     hoy = datetime.now()
 
-    def calcular_mora_real(row):
+    def calc_mora(row):
         try:
-            f_inicio = pd.to_datetime(row['inicio_mensualidades'])
-            if pd.isnull(f_inicio): f_inicio = hoy
+            f_ini = pd.to_datetime(row['inicio_mensualidades'])
+            if pd.isnull(f_ini): f_ini = hoy
             
-            meses_transcurridos = (hoy.year - f_inicio.year) * 12 + (hoy.month - f_inicio.month)
-            if hoy.day < f_inicio.day: meses_transcurridos -= 1
+            diff = (hoy.year - f_ini.year) * 12 + (hoy.month - f_ini.month)
+            if hoy.day < f_ini.day: diff -= 1
             
             mensualidad = float(row['mensualidad'])
-            deuda_total_a_hoy = max(0, meses_transcurridos) * mensualidad
-            pagado_real = float(row['total_abonado_mensualidades'])
+            deuda_teorica = max(0, diff) * mensualidad
+            pagado = float(row['total_pagado_cuotas'])
             
-            saldo_vencido = max(0.0, deuda_total_a_hoy - pagado_real)
+            saldo = max(0.0, deuda_teorica - pagado)
             
-            meses_cubiertos = pagado_real / mensualidad if mensualidad > 0 else 0
-            fecha_vencimiento_pendiente = f_inicio + pd.DateOffset(months=int(meses_cubiertos))
-            dias_atraso = (hoy - fecha_vencimiento_pendiente).days if saldo_vencido > 0 else 0
+            # Días de atraso basados en el último peso cubierto
+            cubiertos = pagado / mensualidad if mensualidad > 0 else 0
+            vence_pendiente = f_ini + pd.DateOffset(months=int(cubiertos))
+            dias = (hoy - vence_pendiente).days if saldo > 0 else 0
             
-            return pd.Series([max(0, dias_atraso), saldo_vencido])
+            return pd.Series([max(0, dias), saldo])
         except:
             return pd.Series([0, 0.0])
 
-    df_cartera[['dias_atraso', 'pago_corriente']] = df_cartera.apply(calcular_mora_real, axis=1)
+    df_cartera[['atraso', 'monto_vencido']] = df_cartera.apply(calc_mora, axis=1)
 
-    # --- 4. CONTACTO Y ESTATUS ---
-    def link_contacto(row, tipo):
-        try:
-            cl_info = df_cl[df_cl['nombre'] == row['cliente']].iloc[0]
-            if tipo == "WA":
-                tel_limpio = re.sub(r'\D', '', str(cl_info['telefono']))
-                tel_final = "52" + tel_limpio if len(tel_limpio) == 10 else tel_limpio
-                msg = (f"Hola {row['cliente']}, te saludamos de Valle Mart. Detectamos un saldo pendiente en tu lote "
-                       f"{row['ubicacion']} por {fmt_moneda(row['pago_corriente'])}. Contamos con {row['dias_atraso']} días de atraso.")
-                return f"https://wa.me/{tel_final}?text={urllib.parse.quote(msg)}"
-            else:
-                mail = cl_info['correo']
-                return f"mailto:{mail}?subject=Estado de Cuenta - Lote {row['ubicacion']}"
-        except: return None
-
-    df_cartera['WhatsApp'] = df_cartera.apply(lambda r: link_contacto(r, "WA"), axis=1)
-    df_cartera['Correo'] = df_cartera.apply(lambda r: link_contacto(r, "Mail"), axis=1)
-
-    # --- 5. TABLA DE COBRANZA ---
+    # --- 4. TABLA DE COBRANZA ---
     st.subheader("📋 Control de Cobranza y Contacto")
     
-    c_f1, c_f2 = st.columns(2)
-    solo_mora = c_f1.toggle("Ver solo clientes con adeudo", value=True)
-    busqueda = c_f2.text_input("🔍 Buscar cliente o lote:")
+    cf1, cf2 = st.columns(2)
+    solo_mora = cf1.toggle("Ver solo clientes con adeudo", value=True)
+    busqueda = cf2.text_input("🔍 Buscar cliente o lote:")
 
-    df_mostrar = df_cartera.copy()
+    df_viz = df_cartera.copy()
     if solo_mora:
-        df_mostrar = df_mostrar[df_mostrar['pago_corriente'] > 0]
+        df_viz = df_viz[df_viz['monto_vencido'] > 0]
     
     if busqueda:
-        df_mostrar = df_mostrar[
-            df_mostrar['cliente'].astype(str).str.contains(busqueda, case=False) | 
-            df_mostrar['ubicacion'].astype(str).str.contains(busqueda, case=False)
+        df_viz = df_viz[
+            df_viz['cliente'].astype(str).str.contains(busqueda, case=False) | 
+            df_viz['ubicacion'].astype(str).str.contains(busqueda, case=False)
         ]
 
-    if not df_mostrar.empty:
-        df_mostrar = df_mostrar.sort_values("dias_atraso", ascending=False)
+    if not df_viz.empty:
+        df_viz = df_viz.sort_values("atraso", ascending=False)
         
-        # PRE-FORMATEO
-        df_viz = df_mostrar.copy()
-        df_viz["Saldo Vencido"] = df_viz["pago_corriente"].apply(fmt_moneda)
-        df_viz['Estatus'] = df_viz['dias_atraso'].apply(
-            lambda x: "🔴 CRÍTICO (+75d)" if x > 75 else ("🟡 MORA (+25d)" if x > 25 else "🟢 AL CORRIENTE")
+        # Aplicamos el formato con comas antes de mostrar
+        df_viz["Saldo Vencido"] = df_viz["monto_vencido"].apply(fmt_moneda)
+        df_viz['Estatus'] = df_viz['atraso'].apply(
+            lambda x: "🔴 CRÍTICO" if x > 60 else ("🟡 MORA" if x > 5 else "🟢 AL CORRIENTE")
         )
 
-        # MOSTRAR TABLA
+        # Usamos una configuración de columnas más simple para evitar el TypeError
         st.dataframe(
-            df_viz[["Estatus", "ubicacion", "cliente", "dias_atraso", "Saldo Vencido", "WhatsApp", "Correo"]],
+            df_viz[["Estatus", "ubicacion", "cliente", "atraso", "Saldo Vencido"]],
             column_config={
-                "Estatus": st.column_config.TextColumn("Estatus"),
-                "ubicacion": st.column_config.TextColumn("Lote"),
-                "cliente": st.column_config.TextColumn("Cliente"),
-                "dias_atraso": st.column_config.NumberColumn("Días de Atraso"),
-                "Saldo Vencido": st.column_config.TextColumn("Saldo Vencido", alignment="right"),
-                "WhatsApp": st.column_config.LinkColumn("📲 Enviar WA", display_text="WhatsApp"),
-                "Correo": st.column_config.LinkColumn("📧 Enviar Mail", display_text="Email")
+                "ubicacion": "Lote",
+                "cliente": "Cliente",
+                "atraso": st.column_config.NumberColumn("Días de Atraso"),
+                "Saldo Vencido": st.column_config.TextColumn("Saldo Vencido", alignment="right")
             },
             use_container_width=True, 
             hide_index=True
         )
     else:
-        st.success("🎉 No se encontraron deudas pendientes con los filtros aplicados.")
+        st.success("🎉 Todo al corriente.")
