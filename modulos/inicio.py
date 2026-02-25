@@ -125,7 +125,7 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
         df_viz = df_mostrar.copy()
         df_viz["Saldo Vencido"] = df_viz["pago_corriente"].apply(fmt_moneda)
         df_viz['Estatus'] = df_viz['dias_atraso'].apply(
-            lambda x: "🔴 CRÍTICO (+60d)" if x > 60 else ("🟡 MORA (+5d)" if x > 5 else "🟢 AL CORRIENTE")
+            lambda x: "🔴 CRÍTICO (+75d)" if x > 75 else ("🟡 MORA (+25d)" if x > 25 else "🟢 AL CORRIENTE")
         )
 
         st.dataframe(
