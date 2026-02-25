@@ -1,15 +1,36 @@
-import streamlit as st
-import pandas as pd
-from datetime import datetime
-
 def render_gastos(df_g, conn, URL_SHEET, fmt_moneda, cargar_datos):
     st.title("💸 Gestión de Gastos")
     
     # --- VISTA GENERAL ---
     st.write("### 🔍 Historial de Gastos")
     if not df_g.empty:
-        # Mostramos la tabla principal
-        st.dataframe(df_g, use_container_width=True, hide_index=True)
+        # 1. Preparar el DataFrame para visualización (Ordenado por fecha reciente)
+        df_visual = df_g.copy()
+        df_visual["fecha"] = pd.to_datetime(df_visual["fecha"])
+        df_visual = df_visual.sort_values(by="fecha", ascending=False)
+
+        # 2. Aplicar el criterio de Pandas Style (Símbolo $, comas y sin decimales en ID)
+        df_estilado = df_visual.style.format({
+            "monto": "$ {:,.2f}",
+            "id_gasto": "{:.0f}",
+            "fecha": lambda x: x.strftime('%d/%m/%Y')
+        })
+
+        # 3. Mostrar la tabla principal
+        st.dataframe(
+            df_estilado, 
+            column_config={
+                "id_gasto": "ID",
+                "fecha": "Fecha",
+                "categoria": "Categoría",
+                "monto": "Monto",
+                "concepto": "Concepto",
+                "notas": "Notas"
+            },
+            use_container_width=True, 
+            hide_index=True
+        )
+
         total_gastos = df_g["monto"].sum()
         st.info(f"💰 **Gasto Total Acumulado:** {fmt_moneda(total_gastos)}")
     else:
@@ -17,9 +38,7 @@ def render_gastos(df_g, conn, URL_SHEET, fmt_moneda, cargar_datos):
 
     tab_nuevo, tab_editar = st.tabs(["✨ Registrar Gasto", "✏️ Editar / Eliminar"])
 
-    # ---------------------------------------------------------
     # PESTAÑA 1: REGISTRAR NUEVO GASTO
-    # ---------------------------------------------------------
     with tab_nuevo:
         with st.form("form_nuevo_gasto"):
             st.subheader("Detalles del Egreso")
@@ -61,9 +80,7 @@ def render_gastos(df_g, conn, URL_SHEET, fmt_moneda, cargar_datos):
                     conn.update(spreadsheet=URL_SHEET, worksheet="gastos", data=df_g)
                     st.success(f"✅ Gasto por {fmt_moneda(f_mon)} registrado."); st.cache_data.clear(); st.rerun()
 
-    # ---------------------------------------------------------
     # PESTAÑA 2: EDITAR O ELIMINAR
-    # ---------------------------------------------------------
     with tab_editar:
         if not df_g.empty:
             gastos_lista = (df_g["id_gasto"].astype(str) + " | " + df_g["fecha"] + " | " + df_g["concepto"]).tolist()
