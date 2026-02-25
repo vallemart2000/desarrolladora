@@ -33,7 +33,7 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
     }
     df_v = verificar_y_reparar_columnas(df_v, cols_v, "ventas", conn, URL_SHEET)
 
-    # --- 2. MÉTRICAS GENERALES (Con formato de comas) ---
+    # --- 2. MÉTRICAS GENERALES ---
     c1, c2, c3, c4 = st.columns(4)
     total_recaudado = (df_v["enganche_pagado"].sum() + df_p["monto"].sum()) if not df_p.empty else df_v["enganche_pagado"].sum()
     valor_cartera = df_v[df_v['estatus_pago'] == 'Activo']['precio_total'].sum()
@@ -113,26 +113,33 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
     df_mostrar = df_cartera.copy()
     if solo_mora:
         df_mostrar = df_mostrar[df_mostrar['pago_corriente'] > 0]
+    
     if busqueda:
-        df_mostrar = df_mostrar[df_mostrar['cliente'].astype(str).str.contains(busqueda, case=False) | 
-                                df_mostrar['ubicacion'].astype(str).str.contains(busqueda, case=False)]
+        df_mostrar = df_mostrar[
+            df_mostrar['cliente'].astype(str).str.contains(busqueda, case=False) | 
+            df_mostrar['ubicacion'].astype(str).str.contains(busqueda, case=False)
+        ]
 
     if not df_mostrar.empty:
         df_mostrar = df_mostrar.sort_values("dias_atraso", ascending=False)
+        
+        # PRE-FORMATEO
         df_viz = df_mostrar.copy()
         df_viz["Saldo Vencido"] = df_viz["pago_corriente"].apply(fmt_moneda)
         df_viz['Estatus'] = df_viz['dias_atraso'].apply(
             lambda x: "🔴 CRÍTICO (+75d)" if x > 75 else ("🟡 MORA (+25d)" if x > 25 else "🟢 AL CORRIENTE")
         )
 
+        # MOSTRAR TABLA
         st.dataframe(
             df_viz[["Estatus", "ubicacion", "cliente", "dias_atraso", "Saldo Vencido", "WhatsApp", "Correo"]],
             column_config={
-                "ubicacion": "Lote",
-                "cliente": "Cliente",
-                "dias_atraso": "Días de Atraso",
+                "Estatus": st.column_config.TextColumn("Estatus"),
+                "ubicacion": st.column_config.TextColumn("Lote"),
+                "cliente": st.column_config.TextColumn("Cliente"),
+                "dias_atraso": st.column_config.NumberColumn("Días de Atraso"),
                 "Saldo Vencido": st.column_config.TextColumn("Saldo Vencido", alignment="right"),
-                "WhatsApp": st.column_config.LinkColumn("📲 Enviar WA", display_text="Chat"),
+                "WhatsApp": st.column_config.LinkColumn("📲 Enviar WA", display_text="WhatsApp"),
                 "Correo": st.column_config.LinkColumn("📧 Enviar Mail", display_text="Email")
             },
             use_container_width=True, 
