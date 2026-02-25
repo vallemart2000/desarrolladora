@@ -93,7 +93,6 @@ def render_detalle_credito(df_v, df_p, fmt_moneda):
         fecha_pago = f_primer_pago + relativedelta(months=i-1)
         monto_abonado_a_cuota = 0.0
         
-        # Lógica para identificar cuánto se pagó de esta cuota específica
         if acumulado_para_tabla >= mensualidad_pactada:
             estatus = "✅ Pagado"
             monto_abonado_a_cuota = mensualidad_pactada
@@ -113,19 +112,29 @@ def render_detalle_credito(df_v, df_p, fmt_moneda):
             "Fecha de Pago": fecha_pago,
             "Monto de Cuota": mensualidad_pactada,
             "Estatus": estatus,
-            "Abonado a Cuota": monto_abonado_a_cuota, # <--- Nueva columna
+            "Abonado a Cuota": monto_abonado_a_cuota,
             "Saldo Restante": saldo_insoluto
         })
 
     df_visual = pd.DataFrame(datos_amort)
 
+    df_estilado = df_visual.style.format({
+        "No. Cuota": "{:.0f}",
+        "Monto de Cuota": "$ {:,.2f}",
+        "Abonado a Cuota": "$ {:,.2f}",
+        "Saldo Restante": "$ {:,.2f}",
+        "Fecha de Pago": lambda x: x.strftime('%d-%b-%Y')
+    })
+
     st.dataframe(
-        df_visual,
+        df_estilado,
         column_config={
-            "Monto de Cuota": st.column_config.NumberColumn(format="$ %.2f"),
-            "Abonado a Cuota": st.column_config.NumberColumn(format="$ %.2f"), # <--- Formato moneda
-            "Saldo Restante": st.column_config.NumberColumn(format="$ %.2f"),
-            "Fecha de Pago": st.column_config.DatetimeColumn(format="DD-MMM-YYYY")
+            "No. Cuota": "No.",
+            "Fecha de Pago": "Fecha de Pago",
+            "Monto de Cuota": "Cuota",
+            "Estatus": "Estatus",
+            "Abonado a Cuota": "Abonado",
+            "Saldo Restante": "Saldo"
         },
         use_container_width=True, 
         hide_index=True
