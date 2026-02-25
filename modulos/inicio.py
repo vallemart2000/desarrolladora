@@ -112,8 +112,8 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
         )
 
         df_estilado = df_viz[["Estatus", "ubicacion", "cliente", "atraso", "monto_vencido", "WhatsApp", "Correo"]].style.format({
-            "monto_vencido": "$ {:,.2f}",
-            "atraso": "{:.0f}"
+            "atraso": "{:.0f}",
+            "monto_vencido": "$ {:,.2f}"            
         })
 
         st.dataframe(
