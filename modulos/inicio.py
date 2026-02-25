@@ -24,7 +24,6 @@ def verificar_y_reparar_columnas(df, columnas_necesarias, worksheet_name, conn, 
 def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
     st.title("🏠 Panel de Control y Cartera")
 
-    # --- 1. REPARACIÓN DE ESTRUCTURA ---
     cols_v = {
         "id_venta": 0, "fecha_registro": "", "ubicacion": "", "cliente": "", 
         "vendedor": "", "precio_total": 0.0, "enganche_pagado": 0.0, 
@@ -33,7 +32,6 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
     }
     df_v = verificar_y_reparar_columnas(df_v, cols_v, "ventas", conn, URL_SHEET)
 
-    # --- 2. MÉTRICAS GENERALES ---
     total_recaudado = (df_v["enganche_pagado"].sum() + df_p["monto"].sum()) if not df_p.empty else df_v["enganche_pagado"].sum()
     valor_cartera = df_v[df_v['estatus_pago'] == 'Activo']['precio_total'].sum()
     
@@ -45,7 +43,6 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
 
     st.markdown("---")
 
-    # --- 3. LÓGICA DE CARTERA VENCIDA ---
     if df_v.empty:
         st.info("No hay datos de ventas registrados.")
         return
@@ -77,7 +74,6 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
 
     df_cartera[['atraso', 'monto_vencido']] = df_cartera.apply(calc_mora, axis=1)
 
-    # --- 4. LÓGICA DE CONTACTO ---
     def link_contacto(row, tipo):
         try:
             cl_info = df_cl[df_cl['nombre'] == row['cliente']].iloc[0]
@@ -95,7 +91,6 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
     df_cartera['WhatsApp'] = df_cartera.apply(lambda r: link_contacto(r, "WA"), axis=1)
     df_cartera['Correo'] = df_cartera.apply(lambda r: link_contacto(r, "Mail"), axis=1)
 
-    # --- 5. TABLA DE COBRANZA ---
     st.subheader("📋 Control de Cobranza y Contacto")
     
     cf1, cf2 = st.columns(2)
@@ -112,19 +107,21 @@ def render_inicio(df_v, df_p, df_cl, conn, URL_SHEET, fmt_moneda):
     if not df_viz.empty:
         df_viz = df_viz.sort_values("atraso", ascending=False)
         
-        # Formateamos el Saldo Vencido para mostrar comas
-        df_viz["Saldo Vencido"] = df_viz["monto_vencido"].apply(fmt_moneda)
         df_viz['Estatus'] = df_viz['atraso'].apply(
-            lambda x: "🔴 CRÍTICO (+75)" if x > 75 else ("🟡 MORA (+25)" if x > 25 else "🟢 AL CORRIENTE")
+            lambda x: "🔴 CRÍTICO(+75)" if x > 75 else ("🟡 MORA(+25)" if x > 25 else "🟢 AL CORRIENTE")
         )
 
+        df_estilado = df_viz[["Estatus", "ubicacion", "cliente", "atraso", "monto_vencido", "WhatsApp", "Correo"]].style.format({
+            "monto_vencido": "$ {:,.2f}"
+        })
+
         st.dataframe(
-            df_viz[["Estatus", "ubicacion", "cliente", "atraso", "Saldo Vencido", "WhatsApp", "Correo"]],
+            df_estilado,
             column_config={
                 "ubicacion": "Lote",
                 "cliente": "Cliente",
-                "atraso": st.column_config.NumberColumn("Días de Atraso"),
-                "Saldo Vencido": st.column_config.NumberColumn("Saldo Vencido", format="$ %.2f"),
+                "atraso": "Días de Atraso",
+                "monto_vencido": "Saldo Vencido",
                 "WhatsApp": st.column_config.LinkColumn("📲 WA", display_text="Chat"),
                 "Correo": st.column_config.LinkColumn("📧 Mail", display_text="Email")
             },
