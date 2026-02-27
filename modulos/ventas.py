@@ -42,16 +42,20 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                     st.markdown("---")
                     cf1, cf2, cf3 = st.columns(3)
                     f_tot = cf1.number_input("Precio Final de Venta ($)", min_value=0.0, value=costo_base)
-                    f_pla = cf2.number_input("🕒 Plazo (Meses)", min_value=1, value=12)
-                    f_comision = cf3.number_input("Comisión Pactada ($)", min_value=0.0, step=100.0)
+                    
+                    # PETICIÓN: Selector de plazos fijos
+                    f_pla = cf2.selectbox("🕒 Plazo (Meses)", [12, 24, 36, 48], index=0)
+                    
+                    # PETICIÓN: Comisión sugerida comienza en $5,000.00
+                    f_comision = cf3.number_input("Comisión Pactada ($)", min_value=0.0, value=5000.0, step=100.0)
                     
                     f_coment = st.text_area("📝 Notas Adicionales")
 
-                    # Aplicación de tu fórmula: (Precio - Enganche Total) / Plazo
+                    # Cálculo de mensualidad (Precio - Enganche) / Plazo
                     m_calc = (f_tot - eng_minimo) / f_pla if f_pla > 0 else 0
                     
                     st.write(f"📊 **Mensualidad Resultante:** {fmt_moneda(m_calc)}")
-                    st.warning("⚠️ El estatus inicial será **APARTADO**. El enganche debe cobrarse en el módulo de Cobranza.")
+                    st.warning("⚠️ El estatus inicial será **APARTADO**. El enganche debe cobrarse en Cobranza.")
 
                     if st.form_submit_button("💾 GENERAR CONTRATO", type="primary"):
                         cliente_final = f_cli_nuevo if f_cli_nuevo else f_cli_sel
@@ -92,8 +96,6 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                             }])
                             
                             df_v = pd.concat([df_v, nueva_v], ignore_index=True)
-                            
-                            # 3. Cambiar estatus a APARTADO
                             df_u.loc[df_u["ubicacion"] == f_lote, "estatus"] = "Apartado"
                             
                             conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=df_v)
@@ -117,8 +119,17 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                 
                 with st.form("form_edit_vta_clean"):
                     e_tot = st.number_input("Precio Final ($)", value=float(datos_v["precio_total"]))
-                    e_pla = st.number_input("Plazo (Meses)", value=int(datos_v["plazo_meses"]))
-                    e_com = st.number_input("Comisión ($)", value=float(datos_v.get("comision_venta", 0)))
+                    
+                    # Selector de plazos también en el editor para consistencia
+                    plazos_opciones = [12, 24, 36, 48]
+                    plazo_actual = int(datos_v["plazo_meses"])
+                    # Si el plazo actual no está en la lista, lo agregamos temporalmente
+                    if plazo_actual not in plazos_opciones:
+                        plazos_opciones.append(plazo_actual)
+                        plazos_opciones.sort()
+                    
+                    e_pla = st.selectbox("Plazo (Meses)", plazos_opciones, index=plazos_opciones.index(plazo_actual))
+                    e_com = st.number_input("Comisión ($)", value=float(datos_v.get("comision_venta", 5000.0)))
                     
                     st.markdown("---")
                     f_motivo = st.text_input("Motivo de cancelación (Solo para archivar)")
@@ -126,15 +137,19 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                     c_save, c_cancel = st.columns(2)
                     
                     if c_save.form_submit_button("💾 GUARDAR CAMBIOS"):
-                        eng_req = float(datos_v["enganche_requerido"])
-                        df_v.at[idx_vta, "precio_total"] = e_tot
-                        df_v.at[idx_vta, "plazo_meses"] = e_pla
-                        df_v.at[idx_vta, "comision_venta"] = e_com
-                        # Recálculo automático de mensualidad
-                        df_v.at[idx_vta, "mensualidad"] = (e_tot - eng_req) / e_pla if e_pla > 0 else 0
-                        
-                        conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=df_v)
-                        st.success("Cambios aplicados."); st.cache_data.clear(); st.rerun()
+                        # Corrección de error: Asegurar conversión a float antes de operar
+                        try:
+                            eng_req = float(datos_v["enganche_requerido"])
+                            df_v.at[idx_vta, "precio_total"] = float(e_tot)
+                            df_v.at[idx_vta, "plazo_meses"] = int(e_pla)
+                            df_v.at[idx_vta, "comision_venta"] = float(e_com)
+                            # Recálculo con seguridad contra división por cero
+                            df_v.at[idx_vta, "mensualidad"] = (float(e_tot) - eng_req) / int(e_pla) if int(e_pla) > 0 else 0
+                            
+                            conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=df_v)
+                            st.success("Cambios aplicados."); st.cache_data.clear(); st.rerun()
+                        except Exception as e:
+                            st.error(f"Error al actualizar: {e}")
 
                     if c_cancel.form_submit_button("❌ CANCELAR Y LIBERAR LOTE"):
                         if not f_motivo: st.error("Escriba el motivo.")
