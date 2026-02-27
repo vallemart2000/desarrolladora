@@ -42,20 +42,15 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                     st.markdown("---")
                     cf1, cf2, cf3 = st.columns(3)
                     f_tot = cf1.number_input("Precio Final de Venta ($)", min_value=0.0, value=costo_base)
-                    
-                    # PETICIÓN: Selector de plazos fijos
                     f_pla = cf2.selectbox("🕒 Plazo (Meses)", [12, 24, 36, 48], index=0)
-                    
-                    # PETICIÓN: Comisión sugerida comienza en $5,000.00
                     f_comision = cf3.number_input("Comisión Pactada ($)", min_value=0.0, value=5000.0, step=100.0)
                     
                     f_coment = st.text_area("📝 Notas Adicionales")
 
-                    # Cálculo de mensualidad (Precio - Enganche) / Plazo
                     m_calc = (f_tot - eng_minimo) / f_pla if f_pla > 0 else 0
                     
                     st.write(f"📊 **Mensualidad Resultante:** {fmt_moneda(m_calc)}")
-                    st.warning("⚠️ El estatus inicial será **APARTADO**. El enganche debe cobrarse en Cobranza.")
+                    st.warning("⚠️ El estatus inicial será **APARTADO**.")
 
                     if st.form_submit_button("💾 GENERAR CONTRATO", type="primary"):
                         cliente_final = f_cli_nuevo if f_cli_nuevo else f_cli_sel
@@ -66,7 +61,6 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                         elif vendedor_final == "-- SELECCIONAR --" or not vendedor_final:
                             st.error("❌ Indique el vendedor.")
                         else:
-                            # 1. Registro de Cliente/Vendedor nuevo
                             if f_cli_nuevo:
                                 nid_c = int(df_cl["id_cliente"].max() + 1) if not df_cl.empty else 1001
                                 df_cl = pd.concat([df_cl, pd.DataFrame([{"id_cliente": nid_c, "nombre": f_cli_nuevo}])], ignore_index=True)
@@ -77,7 +71,6 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                                 df_vd = pd.concat([df_vd, pd.DataFrame([{"id_vendedor": nid_vd, "nombre": f_vende_nuevo}])], ignore_index=True)
                                 conn.update(spreadsheet=URL_SHEET, worksheet="vendedores", data=df_vd)
 
-                            # 2. Guardar Venta
                             nid_vta = int(df_v["id_venta"].max() + 1) if not df_v.empty else 1
                             nueva_v = pd.DataFrame([{
                                 "id_venta": nid_vta, 
@@ -101,29 +94,35 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                             conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=df_v)
                             conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
                             
-                            st.success(f"✅ Contrato {nid_vta} registrado con éxito.")
+                            st.success(f"✅ Contrato {nid_vta} registrado.")
                             st.cache_data.clear(); st.rerun()
 
     # --- PESTAÑA 2: EDITOR Y ARCHIVO ---
     with tab_editar:
         st.subheader("Modificar Contratos")
-        if df_v.empty: st.info("No hay registros.")
+        if df_v.empty: 
+            st.info("No hay registros.")
         else:
-            lista_ventas = (df_v["ubicacion"] + " | " + df_v["cliente"]).tolist()
+            # SOLUCIÓN AL ERROR: Convertimos a string y manejamos valores nulos
+            df_v_limpio = df_v.copy()
+            df_v_limpio["ubicacion"] = df_v_limpio["ubicacion"].astype(str).fillna("N/A")
+            df_v_limpio["cliente"] = df_v_limpio["cliente"].astype(str).fillna("N/A")
+            
+            lista_ventas = (df_v_limpio["ubicacion"] + " | " + df_v_limpio["cliente"]).tolist()
             edit_sel = st.selectbox("Seleccione Contrato", ["--"] + lista_ventas)
             
             if edit_sel != "--":
+                # Recuperar la ubicación real (antes del separador '|')
                 id_ubi_sel = edit_sel.split(" | ")[0]
-                idx_vta = df_v[df_v["ubicacion"] == id_ubi_sel].index[0]
+                # Buscar el índice en el DataFrame original usando la ubicación
+                idx_vta = df_v[df_v["ubicacion"].astype(str) == id_ubi_sel].index[0]
                 datos_v = df_v.loc[idx_vta]
                 
-                with st.form("form_edit_vta_clean"):
+                with st.form("form_edit_vta_fixed"):
                     e_tot = st.number_input("Precio Final ($)", value=float(datos_v["precio_total"]))
                     
-                    # Selector de plazos también en el editor para consistencia
                     plazos_opciones = [12, 24, 36, 48]
                     plazo_actual = int(datos_v["plazo_meses"])
-                    # Si el plazo actual no está en la lista, lo agregamos temporalmente
                     if plazo_actual not in plazos_opciones:
                         plazos_opciones.append(plazo_actual)
                         plazos_opciones.sort()
@@ -132,26 +131,24 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                     e_com = st.number_input("Comisión ($)", value=float(datos_v.get("comision_venta", 5000.0)))
                     
                     st.markdown("---")
-                    f_motivo = st.text_input("Motivo de cancelación (Solo para archivar)")
+                    f_motivo = st.text_input("Motivo de cancelación")
                     
                     c_save, c_cancel = st.columns(2)
                     
                     if c_save.form_submit_button("💾 GUARDAR CAMBIOS"):
-                        # Corrección de error: Asegurar conversión a float antes de operar
                         try:
                             eng_req = float(datos_v["enganche_requerido"])
                             df_v.at[idx_vta, "precio_total"] = float(e_tot)
                             df_v.at[idx_vta, "plazo_meses"] = int(e_pla)
                             df_v.at[idx_vta, "comision_venta"] = float(e_com)
-                            # Recálculo con seguridad contra división por cero
                             df_v.at[idx_vta, "mensualidad"] = (float(e_tot) - eng_req) / int(e_pla) if int(e_pla) > 0 else 0
                             
                             conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=df_v)
                             st.success("Cambios aplicados."); st.cache_data.clear(); st.rerun()
                         except Exception as e:
-                            st.error(f"Error al actualizar: {e}")
+                            st.error(f"Error: {e}")
 
-                    if c_cancel.form_submit_button("❌ CANCELAR Y LIBERAR LOTE"):
+                    if c_cancel.form_submit_button("❌ CANCELAR CONTRATO"):
                         if not f_motivo: st.error("Escriba el motivo.")
                         else:
                             df_v = df_v.drop(idx_vta)
