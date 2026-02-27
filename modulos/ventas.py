@@ -6,6 +6,13 @@ from dateutil.relativedelta import relativedelta
 def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
     st.title("📝 Gestión de Ventas y Apartados")
     
+    # --- BLINDAJE INICIAL DE DATOS ---
+    # Forzamos que las columnas de texto sean texto desde el inicio para evitar errores de concatenación
+    if not df_v.empty:
+        df_v["ubicacion"] = df_v["ubicacion"].astype(str).replace("nan", "")
+        df_v["cliente"] = df_v["cliente"].astype(str).replace("nan", "")
+        df_v["vendedor"] = df_v["vendedor"].astype(str).replace("nan", "")
+
     tab_nueva, tab_editar, tab_lista = st.tabs(["✨ Nueva Venta/Apartado", "✏️ Editor y Archivo", "📋 Historial"])
 
     # --- PESTAÑA 1: NUEVA VENTA ---
@@ -42,15 +49,10 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                     st.markdown("---")
                     cf1, cf2, cf3 = st.columns(3)
                     f_tot = cf1.number_input("Precio Final de Venta ($)", min_value=0.0, value=costo_base)
-                    
-                    # PETICIÓN: Plazos fijos
                     f_pla = cf2.selectbox("🕒 Plazo (Meses)", [12, 24, 36, 48], index=0)
-                    
-                    # PETICIÓN: Comisión inicial en $5,000.00
                     f_comision = cf3.number_input("Comisión Pactada ($)", min_value=0.0, value=5000.0, step=100.0)
                     
                     f_coment = st.text_area("📝 Notas Adicionales")
-
                     m_calc = (f_tot - eng_minimo) / f_pla if f_pla > 0 else 0
                     
                     st.write(f"📊 **Mensualidad Resultante:** {fmt_moneda(m_calc)}")
@@ -64,18 +66,17 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                         elif vendedor_final == "-- SELECCIONAR --" or not vendedor_final:
                             st.error("❌ Indique el vendedor.")
                         else:
-                            # Registro de Clientes/Vendedores
+                            # 1. Registro de Cliente/Vendedor
                             if f_cli_nuevo:
                                 nid_c = int(df_cl["id_cliente"].max() + 1) if not df_cl.empty else 1001
-                                df_cl = pd.concat([df_cl, pd.DataFrame([{"id_cliente": nid_c, "nombre": f_cli_nuevo}])], ignore_index=True)
+                                df_cl = pd.concat([df_cl, pd.DataFrame([{"id_cliente": nid_c, "nombre": str(f_cli_nuevo)}])], ignore_index=True)
                                 conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=df_cl)
-
                             if f_vende_nuevo:
                                 nid_vd = int(df_vd["id_vendedor"].max() + 1) if not df_vd.empty else 501
-                                df_vd = pd.concat([df_vd, pd.DataFrame([{"id_vendedor": nid_vd, "nombre": f_vende_nuevo}])], ignore_index=True)
+                                df_vd = pd.concat([df_vd, pd.DataFrame([{"id_vendedor": nid_vd, "nombre": str(f_vende_nuevo)}])], ignore_index=True)
                                 conn.update(spreadsheet=URL_SHEET, worksheet="vendedores", data=df_vd)
 
-                            # Registro de Venta
+                            # 2. Preparar nueva venta con tipos explícitos
                             nid_vta = int(df_v["id_venta"].max() + 1) if not df_v.empty else 1
                             nueva_v = pd.DataFrame([{
                                 "id_venta": nid_vta, 
@@ -90,9 +91,10 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                                 "plazo_meses": int(f_pla), 
                                 "mensualidad": float(m_calc), 
                                 "estatus_pago": "Pendiente",
-                                "comentarios": f_coment
+                                "comentarios": str(f_coment)
                             }])
                             
+                            # Concatenación segura
                             df_v = pd.concat([df_v, nueva_v], ignore_index=True)
                             df_u.loc[df_u["ubicacion"] == f_lote, "estatus"] = "Apartado"
                             
@@ -108,22 +110,16 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
         if df_v.empty:
             st.info("No hay registros.")
         else:
-            # --- PARCHE DE SEGURIDAD PARA EL ERROR DE TIPO ---
-            # Forzamos que las columnas de búsqueda sean texto antes de concatenar
-            v_temp = df_v.copy()
-            v_temp["ubicacion"] = v_temp["ubicacion"].astype(str).fillna("N/A")
-            v_temp["cliente"] = v_temp["cliente"].astype(str).fillna("N/A")
-            
-            opciones_busqueda = (v_temp["ubicacion"] + " | " + v_temp["cliente"]).tolist()
+            # Creamos las opciones de búsqueda usando los datos ya blindados al inicio
+            opciones_busqueda = (df_v["ubicacion"] + " | " + df_v["cliente"]).tolist()
             edit_sel = st.selectbox("Seleccione Contrato", ["--"] + opciones_busqueda)
             
             if edit_sel != "--":
                 id_ubi_sel = edit_sel.split(" | ")[0]
-                # Buscar índice asegurando que comparamos texto con texto
-                idx_vta = df_v[df_v["ubicacion"].astype(str) == id_ubi_sel].index[0]
+                idx_vta = df_v[df_v["ubicacion"] == id_ubi_sel].index[0]
                 datos_v = df_v.loc[idx_vta]
                 
-                with st.form("form_edit_fixed"):
+                with st.form("form_edit_vta_final"):
                     e_tot = st.number_input("Precio Final ($)", value=float(datos_v["precio_total"]))
                     
                     plazos_lista = [12, 24, 36, 48]
@@ -132,8 +128,6 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                     
                     e_pla = st.selectbox("Plazo (Meses)", plazos_lista, index=plazos_lista.index(plazo_act))
                     e_com = st.number_input("Comisión ($)", value=float(datos_v.get("comision_venta", 5000.0)))
-                    
-                    st.markdown("---")
                     f_motivo = st.text_input("Motivo de cancelación")
                     
                     c_save, c_cancel = st.columns(2)
@@ -149,7 +143,7 @@ def render_ventas(df_v, df_u, df_cl, df_vd, df_p, conn, URL_SHEET, fmt_moneda):
                             conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=df_v)
                             st.success("Cambios aplicados."); st.cache_data.clear(); st.rerun()
                         except Exception as ex:
-                            st.error(f"Error técnico: {ex}")
+                            st.error(f"Error: {ex}")
 
                     if c_cancel.form_submit_button("❌ CANCELAR CONTRATO"):
                         if not f_motivo: st.error("Indique motivo.")
